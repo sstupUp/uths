@@ -1134,12 +1134,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 						
 
 				*/
-				char buf_name[50] = {0};
 				
 				list_for_each_entry(cur, &sister_list, d_subdirs)
 				{
-					dentry_path_raw(cur, buf_name, 30);
-					printk(KERN_INFO"[CUSTOM] sisters: %s", buf_name);
+					printk(KERN_INFO"[CUSTOM] sisters: %s", cur->d_name.name);
 					
 					if(cur == zxc)
 						break;

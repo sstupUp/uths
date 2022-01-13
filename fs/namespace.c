@@ -613,10 +613,19 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
 {
 	struct hlist_head *head = m_hash(mnt, dentry);
 	struct mount *p;
-
+	
+	// Byoung
 	hlist_for_each_entry_rcu(p, head, mnt_hash)
+	{	
+		// Byoung
+	//	printk("[__lookup_mnt] p = %s | p_parent = %s", p->mnt_mountpoint->d_name.name, p->mnt_parent->mnt_mountpoint->d_name.name);
 		if (&p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry)
+		{
+			printk("[__lookup_mnt] done");	
 			return p;
+		}
+	
+	}
 	return NULL;
 }
 
@@ -3068,14 +3077,15 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		return retval;
 	
 	// Byoung
-	if(!strncmp(path.dentry->d_name.name, "/labb", 5))
+	if((dev_name != NULL) && (!strncmp(dev_name, "/dev/sdb", 8) || !strncmp(dev_name, "/dev/sdc", 8))){
+
 		flags &= MS_UTHS;
 
 	if(flags & MS_UTHS)
 		printk("[ksys_mount] UTHS");
+	}
 	//////
-
-
+	
 
 	retval = security_sb_mount(dev_name, &path,
 				   type_page, flags, data_page);
@@ -3340,6 +3350,7 @@ int ksys_mount(const char __user *dev_name, const char __user *dir_name,
 	if (IS_ERR(kernel_type))
 		goto out_type;
 
+	
 	kernel_dev = copy_mount_string(dev_name);
 	ret = PTR_ERR(kernel_dev);
 	if (IS_ERR(kernel_dev))
@@ -3350,6 +3361,8 @@ int ksys_mount(const char __user *dev_name, const char __user *dir_name,
 	ret = PTR_ERR(options);
 	if (IS_ERR(options))
 		goto out_data;
+
+	printk("[ksys_mount] type = %s | dev_name = %s | option = %s", kernel_type, kernel_dev, options);
 
 	ret = do_mount(kernel_dev, dir_name, kernel_type, flags, options);
 

@@ -1123,10 +1123,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 				struct dentry *hoo_root = hoo->mnt.mnt_root;
 				struct dentry *hoo_p_root = hoo->mnt_parent->mnt.mnt_root;
 
-				printk("[CUSTOM] struct mnt = %s | mnt_mountpoint = %s | number = %d", hoo->mnt_devname, hoo->mnt_mountpoint->d_name.name, hoo->number);
+				printk("[CUSTOM] struct mnt = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_devname, hoo->mnt_mountpoint->d_name.name, hoo->mnt_mp->m_dentry->d_name.name);
 				printk("[CUSTOM] mnt_root = %s", hoo_root->d_name.name);
 				
-				printk("[CUSTOM] mount parent = %s | mnt_mountpoint = %s | number = %d", hoo->mnt_parent->mnt_devname, hoo->mnt_parent->mnt_mountpoint->d_name.name, hoo->mnt_parent->number);
+				printk("[CUSTOM] mount parent = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_parent->mnt_devname, hoo->mnt_parent->mnt_mountpoint->d_name.name, hoo->mnt_parent->mnt_mp->m_dentry->d_name.name);
 				printk("[CUSTOM] parent mnt_root = %s", hoo_p_root->d_name.name);
 				//////
 
@@ -1141,8 +1141,9 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 				{
 					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
 				
-					i++;	
-					if(i == 4)
+				//	i++;	
+					//if(i == 4)
+					if(cur == hoo_dent)
 						break;
 				}
 					
@@ -1155,8 +1156,8 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
 					
 					i++;
-					//if(cur == hoo_p_dent)
-					if(i == 4)
+					if(cur == hoo_p_dent)
+					//if(i == 4)
 						break;
 				}
 				
