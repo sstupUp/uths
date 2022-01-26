@@ -33,7 +33,6 @@ struct fs_context;
 
 // Byoung
 #define MNT_UTHS	0x80	/* used for UTHS system */
-				/* 0x80 wasn't being used in 5.3.12 */
 
 #define MNT_SHRINKABLE	0x100
 #define MNT_WRITE_HOLD	0x200
@@ -73,6 +72,11 @@ struct vfsmount {
 	struct dentry *mnt_root;	/* root of the mounted tree */
 	struct super_block *mnt_sb;	/* pointer to superblock */
 	int mnt_flags;
+
+	// Byoung
+	int mnt_number;			// used for __lookup_mnt
+	//////////
+	
 } __randomize_layout;
 
 struct file; /* forward dec */

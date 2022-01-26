@@ -630,7 +630,6 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 		ret_p = vfs_read(f_p.file, buf, count_p, ppos_p);
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
-		fdput_pos(f_p);
 
 		ret = vfs_read(f.file, buf+count_p, count_new, ppos);
 		if(ret >= 0 && ppos){
@@ -638,6 +637,7 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 			ret += ret_p;
 		}
 		fdput_pos(f);
+		fdput_pos(f_p);
 
 	}
 	// just file
@@ -706,7 +706,6 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 		ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
-		fdput_pos(f_p);
 
 		ret = vfs_write(f.file, buf+count_p, count_new, ppos);
 		if(ret >= 0 && ppos){
@@ -714,6 +713,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 			ret += ret_p;
 		}
 		fdput_pos(f);
+		fdput_pos(f_p);
 
 	}
 	// a normal file

@@ -33,10 +33,15 @@
 #include <linux/dnotify.h>
 #include <linux/compat.h>
 
+// Byoung
+#include <linux/dcache.h>
+#include <linux/kernel.h>
+#include "mount.h"
+
 #include "internal.h"
 
 int do_truncate(struct dentry *dentry, loff_t length, unsigned int time_attrs,
-	struct file *filp)
+		struct file *filp)
 {
 	int ret;
 	struct iattr newattrs;
@@ -240,27 +245,27 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 
 	/* Punch hole and zero range are mutually exclusive */
 	if ((mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE)) ==
-	    (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE))
+			(FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE))
 		return -EOPNOTSUPP;
 
 	/* Punch hole must have keep size set */
 	if ((mode & FALLOC_FL_PUNCH_HOLE) &&
-	    !(mode & FALLOC_FL_KEEP_SIZE))
+			!(mode & FALLOC_FL_KEEP_SIZE))
 		return -EOPNOTSUPP;
 
 	/* Collapse range should only be used exclusively. */
 	if ((mode & FALLOC_FL_COLLAPSE_RANGE) &&
-	    (mode & ~FALLOC_FL_COLLAPSE_RANGE))
+			(mode & ~FALLOC_FL_COLLAPSE_RANGE))
 		return -EINVAL;
 
 	/* Insert range should only be used exclusively. */
 	if ((mode & FALLOC_FL_INSERT_RANGE) &&
-	    (mode & ~FALLOC_FL_INSERT_RANGE))
+			(mode & ~FALLOC_FL_INSERT_RANGE))
 		return -EINVAL;
 
 	/* Unshare range should only be used with allocate mode. */
 	if ((mode & FALLOC_FL_UNSHARE_RANGE) &&
-	    (mode & ~(FALLOC_FL_UNSHARE_RANGE | FALLOC_FL_KEEP_SIZE)))
+			(mode & ~(FALLOC_FL_UNSHARE_RANGE | FALLOC_FL_KEEP_SIZE)))
 		return -EINVAL;
 
 	if (!(file->f_mode & FMODE_WRITE))
@@ -705,7 +710,7 @@ SYSCALL_DEFINE3(chown, const char __user *, filename, uid_t, user, gid_t, group)
 SYSCALL_DEFINE3(lchown, const char __user *, filename, uid_t, user, gid_t, group)
 {
 	return do_fchownat(AT_FDCWD, filename, user, group,
-			   AT_SYMLINK_NOFOLLOW);
+			AT_SYMLINK_NOFOLLOW);
 }
 
 int ksys_fchown(unsigned int fd, uid_t user, gid_t group)
@@ -734,8 +739,8 @@ SYSCALL_DEFINE3(fchown, unsigned int, fd, uid_t, user, gid_t, group)
 }
 
 static int do_dentry_open(struct file *f,
-			  struct inode *inode,
-			  int (*open)(struct inode *, struct file *))
+		struct inode *inode,
+		int (*open)(struct inode *, struct file *))
 {
 	static const struct file_operations empty_fops = {};
 	int error;
@@ -810,10 +815,10 @@ static int do_dentry_open(struct file *f,
 	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_inc(inode);
 	if ((f->f_mode & FMODE_READ) &&
-	     likely(f->f_op->read || f->f_op->read_iter))
+			likely(f->f_op->read || f->f_op->read_iter))
 		f->f_mode |= FMODE_CAN_READ;
 	if ((f->f_mode & FMODE_WRITE) &&
-	     likely(f->f_op->write || f->f_op->write_iter))
+			likely(f->f_op->write || f->f_op->write_iter))
 		f->f_mode |= FMODE_CAN_WRITE;
 
 	f->f_write_hint = WRITE_LIFE_NOT_SET;
@@ -916,7 +921,7 @@ int vfs_open(const struct path *path, struct file *file)
 }
 
 struct file *dentry_open(const struct path *path, int flags,
-			 const struct cred *cred)
+		const struct cred *cred)
 {
 	int error;
 	struct file *f;
@@ -939,7 +944,7 @@ struct file *dentry_open(const struct path *path, int flags,
 EXPORT_SYMBOL(dentry_open);
 
 struct file *open_with_fake_path(const struct path *path, int flags,
-				struct inode *inode, const struct cred *cred)
+		struct inode *inode, const struct cred *cred)
 {
 	struct file *f = alloc_empty_file_noaccount(flags, cred);
 	if (!IS_ERR(f)) {
@@ -1060,7 +1065,7 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 {
 	struct filename *name = getname_kernel(filename);
 	struct file *file = ERR_CAST(name);
-	
+
 	if (!IS_ERR(name)) {
 		file = file_open_name(name, flags, mode);
 		putname(name);
@@ -1070,7 +1075,7 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 EXPORT_SYMBOL(filp_open);
 
 struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
-			    const char *filename, int flags, umode_t mode)
+		const char *filename, int flags, umode_t mode)
 {
 	struct open_flags op;
 	int err = build_open_flags(flags, mode, &op);
@@ -1083,6 +1088,8 @@ EXPORT_SYMBOL(file_open_root);
 long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 {
 	struct open_flags op;
+	int flags_p = flags;
+	umode_t mode_p = mode;
 	int fd = build_open_flags(flags, mode, &op);
 	struct filename *tmp;
 
@@ -1091,20 +1098,121 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 
 	tmp = getname(filename);
 	if (IS_ERR(tmp))
-		return PTR_ERR(tmp);
-	
-	//printk(KERN_INFO "do_sys_open/getname(): filename=%s", tmp->name);
-
+		return PTR_ERR(tmp);	
 	fd = get_unused_fd_flags(flags);
+
 	if (fd >= 0) {
 		struct file *f = do_filp_open(dfd, tmp, &op);
+		// Byoung
 		if (IS_ERR(f)) {
 			put_unused_fd(fd);
 			fd = PTR_ERR(f);
 		} else {
-			fsnotify_open(f);
-			fd_install(fd, f);
-			//printk(KERN_INFO "do_sys_open/file sturct path: %s\n", f->f_path.dentry->d_name.name);
+			// Byoung
+			/////////////////////////////////////////////////////////////	
+			
+			if(!strncmp(tmp->name, "/labb/labb1", 11) && (strlen(tmp->name) >= 12))
+			{
+				struct dentry *tmp_d = f->f_path.dentry;
+				char p_path[30] = {"/labb/"};
+			        int i = 0; 
+				
+				if(flags & O_CUSTOM)
+					printk("[CUSTOM] I'm Back!");
+
+				//////
+				// struct mount * = real_mount(vfsmount)			
+				struct mount *hoo = real_mount(f->f_path.mnt);
+				struct dentry *hoo_root = hoo->mnt.mnt_root;
+				struct dentry *hoo_p_root = hoo->mnt_parent->mnt.mnt_root;
+
+				printk("[CUSTOM] struct mnt = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_devname, hoo->mnt_mountpoint->d_name.name, hoo->mnt_mp->m_dentry->d_name.name);
+				printk("[CUSTOM] mnt_root = %s", hoo_root->d_name.name);
+				
+				printk("[CUSTOM] mount parent = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_parent->mnt_devname, hoo->mnt_parent->mnt_mountpoint->d_name.name, hoo->mnt_parent->mnt_mp->m_dentry->d_name.name);
+				printk("[CUSTOM] parent mnt_root = %s", hoo_p_root->d_name.name);
+				//////
+
+				//struct dentry *cur, *hoo_dent = hoo->mnt_mountpoint, *hoo_p_dent = hoo->mnt_parent->mnt_mountpoint;	
+				struct dentry *cur, *hoo_dent = hoo_root, *hoo_p_dent = hoo_p_root;
+
+			//	struct list_head hoo_child_list = hoo_dent->d_subdirs, hoo_p_child_list = hoo_p_dent->d_subdirs;
+				struct list_head hoo_child_list = hoo_dent->d_subdirs, hoo_p_child_list = hoo_p_dent->d_subdirs;
+				printk("------------------------------- /dev/sdc --------------------------------------");
+				printk("[CUSTOM] mnt->number %d", hoo->number);
+			/*	
+				list_for_each_entry(cur, &hoo_child_list, d_subdirs)
+				{
+					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
+				
+				//	i++;	
+					//if(i == 4)
+					if(cur == hoo_dent)
+						break;
+				}
+			*/		
+				printk("------------------------------- /dev/sdb --------------------------------------");
+				printk("[CUSTOM] mnt->number %d", hoo->mnt_parent->number);
+				i = 0;
+			/*
+				list_for_each_entry(cur, &hoo_p_child_list, d_subdirs)
+				{
+					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
+					
+					i++;
+					if(cur == hoo_p_dent)
+					//if(i == 4)
+						break;
+				}
+			*/	
+				/*
+				while(i < 2)
+				{
+					//printk(KERN_INFO"[CUSTOM] dentry:%s, i = %d", tmp_d->d_iname, i);
+					tmp_d = tmp_d->d_parent;
+					i++;
+				}
+				*/
+				strcat(p_path, tmp_d->d_iname);
+			//	strcat(p_path, "/");
+				//strcat(p_path,f->f_path.dentry->d_iname);
+				
+			//	printk(KERN_INFO"[CUSTOM] parent file: %s", p_path);
+			
+					
+
+				struct filename *p_tmp = getname_kernel(p_path);
+				printk("[CUSTOM] after getname: %s", p_tmp->name);
+				struct open_flags op_p;
+				int fd_p = build_open_flags((flags_p|(O_CREAT)), mode_p|0644, &op_p);
+	
+				struct file *p_f = do_filp_open(dfd, p_tmp, &op_p);
+			//	printk("[CUSTOM] after do_filp_open");
+				if(IS_ERR(p_f)){
+					printk("[do_sys_open] p_f error");
+					put_unused_fd(fd);
+					fd = PTR_ERR(p_f);
+				} else{
+					p_f->used_pflag = 1;
+					p_f->has_pflag = 0;
+
+					f->used_pflag = 0;
+					f->has_pflag = 1;
+					
+					fsnotify_open(f);
+					fd_install(fd, f);
+		
+					fsnotify_open(p_f);
+					fd_install(fd, p_f);
+				}
+				putname(p_tmp);		
+			}else
+			{
+				fsnotify_open(f);
+				fd_install(fd, f);
+			}
+			////////////////////////////////////////////////////////////
+			
 		}
 	}
 	putname(tmp);
@@ -1115,14 +1223,6 @@ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 {
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
-
-	/*
-	if(strstr(filename, "test.txt"))
-		printk(KERN_INFO "An: This is SYSCALL_DEFINE3");
-	
-	if(mode == O_RDWR)
-		printk(KERN_INFO "An: This is SYSCALL_DEFINE3, mode");
-	
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
 
@@ -1131,13 +1231,6 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 {
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
-	
-	if(strstr(filename, "test.txt"))
-		printk(KERN_INFO "An: This is SYSCALL_DEFINE4(openat)");
-	
-	if(mode == O_RDWR)
-		printk(KERN_INFO "An: This is SYSCALL_DEFINE4(openat), mode");
-	
 
 	return do_sys_open(dfd, filename, flags, mode);
 }
@@ -1148,13 +1241,7 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
  * O_LARGEFILE flag.
  */
 COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
-{
-	if(strstr(filename, "test.txt"))
-		printk(KERN_INFO "An: This is COMPAT_SYSCALL_DEFINE3");
-	
-	if(mode == O_RDWR)
-		printk(KERN_INFO "An: This is COMPAT_SYSCALL_DEFINE3, mode");
-	
+{	
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
 
@@ -1164,14 +1251,7 @@ COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t,
  */
 COMPAT_SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, umode_t, mode)
 {
-	if(strstr(filename, "test.txt"))
-		printk(KERN_INFO "An: This is COMPAT_SYSCALL_DEFINE4(openat)");
-	
-	if(mode == O_RDWR)
-		printk(KERN_INFO "An: This is COMPAT_SYSCALL_DEFINE4(openat), mode");
-	
-	
-	return do_sys_open(dfd, filename, flags, mode);
+		return do_sys_open(dfd, filename, flags, mode);
 }
 #endif
 

@@ -1110,80 +1110,18 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		} else {
 			// Byoung
 			/////////////////////////////////////////////////////////////	
-			
+		
+			// change this later for FIO	
 			if(!strncmp(tmp->name, "/labb/labb1", 11) && (strlen(tmp->name) >= 12))
 			{
-				struct dentry *tmp_d = f->f_path.dentry;
-				char p_path[30] = {"/labb/"};
-			        int i = 0; 
 
-				//////
-				// struct mount * = real_mount(vfsmount)			
-				struct mount *hoo = real_mount(f->f_path.mnt);
-				struct dentry *hoo_root = hoo->mnt.mnt_root;
-				struct dentry *hoo_p_root = hoo->mnt_parent->mnt.mnt_root;
-
-				printk("[CUSTOM] struct mnt = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_devname, hoo->mnt_mountpoint->d_name.name, hoo->mnt_mp->m_dentry->d_name.name);
-				printk("[CUSTOM] mnt_root = %s", hoo_root->d_name.name);
-				
-				printk("[CUSTOM] mount parent = %s | mnt_mountpoint = %s | mnt_mp = %s", hoo->mnt_parent->mnt_devname, hoo->mnt_parent->mnt_mountpoint->d_name.name, hoo->mnt_parent->mnt_mp->m_dentry->d_name.name);
-				printk("[CUSTOM] parent mnt_root = %s", hoo_p_root->d_name.name);
-				//////
-
-				//struct dentry *cur, *hoo_dent = hoo->mnt_mountpoint, *hoo_p_dent = hoo->mnt_parent->mnt_mountpoint;	
-				struct dentry *cur, *hoo_dent = hoo_root, *hoo_p_dent = hoo_p_root;
-
-			//	struct list_head hoo_child_list = hoo_dent->d_subdirs, hoo_p_child_list = hoo_p_dent->d_subdirs;
-				struct list_head hoo_child_list = hoo_dent->d_subdirs, hoo_p_child_list = hoo_p_dent->d_subdirs;
-				printk("------------------------------- /dev/sdc --------------------------------------");
-				
-				list_for_each_entry(cur, &hoo_child_list, d_subdirs)
-				{
-					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
-				
-				//	i++;	
-					//if(i == 4)
-					if(cur == hoo_dent)
-						break;
-				}
-					
-				printk("------------------------------- /dev/sdb --------------------------------------");
-			
-				i = 0;
-			
-				list_for_each_entry(cur, &hoo_p_child_list, d_subdirs)
-				{
-					printk("[CUSTOM] sibling: d_name = %s | d_iname = %s", cur->d_name.name, cur->d_iname);
-					
-					i++;
-					if(cur == hoo_p_dent)
-					//if(i == 4)
-						break;
-				}
-				
-				/*
-				while(i < 2)
-				{
-					//printk(KERN_INFO"[CUSTOM] dentry:%s, i = %d", tmp_d->d_iname, i);
-					tmp_d = tmp_d->d_parent;
-					i++;
-				}
-				*/
-				strcat(p_path, tmp_d->d_iname);
-			//	strcat(p_path, "/");
-				//strcat(p_path,f->f_path.dentry->d_iname);
-				
-			//	printk(KERN_INFO"[CUSTOM] parent file: %s", p_path);
-			
-					
-
-				struct filename *p_tmp = getname_kernel(p_path);
-				printk("[CUSTOM] after getname: %s", p_tmp->name);
 				struct open_flags op_p;
 				int fd_p = build_open_flags((flags_p|(O_CREAT)), mode_p|0644, &op_p);
-	
-				struct file *p_f = do_filp_open(dfd, p_tmp, &op_p);
-			//	printk("[CUSTOM] after do_filp_open");
+
+				// device number
+				tmp->fn_number = 1;
+
+				struct file *p_f = do_filp_open(dfd, tmp, &op_p);
 				if(IS_ERR(p_f)){
 					printk("[do_sys_open] p_f error");
 					put_unused_fd(fd);
@@ -1201,7 +1139,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					fsnotify_open(p_f);
 					fd_install(fd, p_f);
 				}
-				putname(p_tmp);		
+		//		putname(tmp);		
 			}else
 			{
 				fsnotify_open(f);

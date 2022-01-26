@@ -44,7 +44,7 @@
 #define MS_NOUSER	(1<<31)
 
 // Byoung
-#define MS_UTHS		0x80000000
+#define MS_UTHS		(1<<8)	/* for UTHS */
 
 /*
  * Superblock flags that can be altered by MS_REMOUNT

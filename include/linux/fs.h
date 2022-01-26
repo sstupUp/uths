@@ -936,6 +936,8 @@ struct file {
 	// Byoung
 	int has_pflag;		// does this file has a parent file?
 	int used_pflag; 	// has this file used a parent file?
+	int f_number;		// device number
+	//////////
 
 	spinlock_t		f_lock;
 	enum rw_hint		f_write_hint;
@@ -2486,6 +2488,10 @@ static inline int break_layout(struct inode *inode, bool wait)
 /* fs/open.c */
 struct audit_names;
 struct filename {
+	// Byoung
+	int fn_number;			// device number
+	//	
+	
 	const char		*name;	/* pointer to actual string */
 	const __user char	*uptr;	/* original userland pointer */
 	int			refcnt;

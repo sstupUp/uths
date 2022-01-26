@@ -75,6 +75,8 @@ struct mount {
 
 	// Byoung
 	int number;
+	int open_flag;
+	/////////
 
 } __randomize_layout;
 

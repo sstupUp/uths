@@ -119,6 +119,7 @@ static struct file *__alloc_file(int flags, const struct cred *cred)
 	// Byoung
 	f->used_pflag = 0;
 	f->has_pflag = 0;
+	f->f_number = 0;
 	/* f->f_version: 0 */
 
 	return f;

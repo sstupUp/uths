@@ -619,12 +619,22 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
 	{
 		
 		// Byoung
+		if((mnt->mnt_number == 1 && !strncmp(p->mnt_devname, "/dev", 4)) || mnt->mnt_number == -1)
+		{
+			printk("--------------[__lookup_mnt] p->mnt_mountpoint = %s | p->devname = %s | flags = %d | mnt_number = %d", p->mnt_mountpoint->d_name.name, p->mnt_devname, mnt->mnt_flags & MNT_UTHS, mnt->mnt_number);
+//			mnt->mnt_number = -1;	
+		}
+	
+		// Byoung
 		// -1 means keep use the same mount struct	
 		if(mnt->mnt_number == -1 && mnt->mnt_flags & MNT_UTHS)
+		{
+			printk("--------------[__lookup_mnt] keep using");
 			return NULL;
+		}
 
 		// Byoung	
-		if(mnt->mnt_number && (p->number == mnt->mnt_number))
+		if((mnt->mnt_number == 1) && (p->number == mnt->mnt_number))
 		{
 			p->mnt.mnt_number = -1;
 			return p;
@@ -633,7 +643,12 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
 
 		if (&p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry)
 			return p;
+	
 	}
+
+	// Byoung
+	if((mnt->mnt_flags & MNT_UTHS) && (mnt->mnt_number == 1) )
+		printk("--------------[__lookup_mnt] return NULL");
 	
 	return NULL;
 }
