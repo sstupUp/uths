@@ -2206,11 +2206,6 @@ OK:
 			}
 		}
 
-		// Byoung
-		if(nd->nd_number == 1)
-			printk("------[link_path_walk loop 4] name = %s", name);
-		/////
-
 		if (unlikely(!d_can_lookup(nd->path.dentry))) {
 			if (nd->flags & LOOKUP_RCU) {
 				if (unlazy_walk(nd))
@@ -2441,6 +2436,11 @@ static struct filename *filename_parentat(int dfd, struct filename *name,
 	if (IS_ERR(name))
 		return name;
 	set_nameidata(&nd, dfd, name);
+	
+	// Byoung
+	if(name->fn_number)
+		nd.nd_number = name->fn_number;
+
 	retval = path_parentat(&nd, flags | LOOKUP_RCU, parent);
 	if (unlikely(retval == -ECHILD))
 		retval = path_parentat(&nd, flags, parent);
@@ -3326,9 +3326,6 @@ static int do_last(struct nameidata *nd,
 	nd->flags &= ~LOOKUP_PARENT;
 	nd->flags |= op->intent;
 
-	if(nd->nd_number == 1)
-		printk("------[do_last] last = %s | nd.filename = %s", dir->d_name.name, nd->name->name);
-
 	if (nd->last_type != LAST_NORM) {
 		error = handle_dots(nd, nd->last_type);
 		if (unlikely(error))
@@ -4110,7 +4107,11 @@ long do_unlinkat(int dfd, struct filename *name)
 	struct inode *inode = NULL;
 	struct inode *delegated_inode = NULL;
 	unsigned int lookup_flags = 0;
+	// Byoung
+//	struct filename * name_ori = name;
+
 retry:
+	name->fn_number = 0;
 	name = filename_parentat(dfd, name, lookup_flags, &path, &last, &type);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
@@ -4159,8 +4160,91 @@ exit1:
 		goto retry;
 	}
 	putname(name);
-	return error;
 
+	return error;
+	/*
+	// Byoung
+	if(!strncmp(name->name, "/labb/labb1", 11))
+	{
+		name = name_ori;
+
+		int error;
+		struct dentry *dentry_p;
+		struct path path_p;
+		struct qstr last_p;
+		int type_p;
+		struct inode *inode_p = NULL;
+		struct inode *delegated_inode_p = NULL;
+		unsigned int lookup_flags_p = 0;
+
+	retry_p:
+		name->fn_number = 1;
+		name = filename_parentat(dfd, name, lookup_flags_p, &path_p, &last_p, &type_p);
+		if (IS_ERR(name))
+			return PTR_ERR(name);
+
+		error = -EISDIR;
+		if (type_p != LAST_NORM)
+			goto exit1_p;
+
+		error = mnt_want_write(path_p.mnt);
+		if (error)
+			goto exit1_p;
+	retry_deleg_p:
+		inode_lock_nested(path_p.dentry->d_inode, I_MUTEX_PARENT);
+		dentry = __lookup_hash(&last_p, path_p.dentry, lookup_flags_p);
+		error = PTR_ERR(dentry_p);
+		if (!IS_ERR(dentry_p)) {
+			* Why not before? Because we want correct error value *
+			if (last_p.name[last_p.len])
+				goto slashes_p;
+			inode_p = dentry_p->d_inode;
+			if (d_is_negative(dentry_p))
+				goto slashes_p;
+			ihold(inode_p);
+			error = security_path_unlink(&path_p, dentry_p);
+			if (error)
+				goto exit2_p;
+			error = vfs_unlink(path_p.dentry->d_inode, dentry_p, &delegated_inode_p);
+	exit2_p:
+			dput(dentry_p);
+		}
+		inode_unlock(path_p.dentry->d_inode);
+		if (inode_p)
+			iput(inode_p);	* truncate the inode here *
+		inode_p = NULL;
+		if (delegated_inode_p) {
+			error = break_deleg_wait(&delegated_inode_p);
+			if (!error)
+				goto retry_deleg_p;
+		}
+		mnt_drop_write(path_p.mnt);
+	exit1_p:
+		path_put(&path_p);
+		if (retry_estale(error, lookup_flags_p)) {
+			lookup_flags_p |= LOOKUP_REVAL;
+			inode_p = NULL;
+			goto retry_p;
+		}
+		putname(name);
+		goto uths;
+
+	slashes_p:
+		if (d_is_negative(dentry_p))
+			error = -ENOENT;
+		else if (d_is_dir(dentry_p))
+			error = -EISDIR;
+		else
+			error = -ENOTDIR;
+		goto exit2;
+	
+
+		printk("[do_unlinkat] %s", name->name);
+	}
+
+uths:
+	return error;
+*/
 slashes:
 	if (d_is_negative(dentry))
 		error = -ENOENT;

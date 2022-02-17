@@ -19,6 +19,9 @@
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
 
+// Byoung
+#include "./mount.h"
+
 unsigned int sysctl_nr_open __read_mostly = 1024*1024;
 unsigned int sysctl_nr_open_min = BITS_PER_LONG;
 /* our min() is unusable in constant expressions ;-/ */
@@ -362,10 +365,30 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	old_fds = old_fdt->fd;
 	new_fds = new_fdt->fd;
 
+	// Byoung
+	struct file** old_fds_p = old_fdt->fd_p;
+	struct file** new_fds_p = new_fdt->fd_p;
+
 	for (i = open_files; i != 0; i--) {
 		struct file *f = *old_fds++;
+
 		if (f) {
 			get_file(f);
+	
+			// Byoung	
+			if(f->has_pflag)
+			{
+				struct file *f_p = *old_fds_p;
+				if (f_p) 
+				{
+					get_file(f_p);
+		
+					rcu_assign_pointer(*new_fds_p, f_p);
+				}
+			}
+			/////	
+			
+
 		} else {
 			/*
 			 * The fd may be claimed in the fd bitmap but not yet
@@ -376,12 +399,22 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 			__clear_open_fd(open_files - i, new_fdt);
 		}
 		rcu_assign_pointer(*new_fds++, f);
+		
+		// Byoung
+		++old_fds_p;
+		++new_fds_p;
+		//
+
 	}
 	spin_unlock(&oldf->file_lock);
 
 	/* clear the remainder */
 	memset(new_fds, 0, (new_fdt->max_fds - open_files) * sizeof(struct file *));
-
+	
+	// Byoung
+	memset(new_fds_p, 0, (new_fdt->max_fds - open_files) * sizeof(struct file *));
+	//
+	
 	rcu_assign_pointer(newf->fdt, new_fdt);
 
 	return newf;
@@ -411,13 +444,21 @@ static struct fdtable *close_files(struct files_struct * files)
 		while (set) {
 			if (set & 1) {
 				struct file * file = xchg(&fdt->fd[i], NULL);
-			//	struct file * file_p = xchg(&fdt->fd_p[i], NULL);
 				
-				// Byoung
-			//	if(file_p)
-			//		filp_close(file_p, files);
-
 				if (file) {
+			
+					// Byoung
+					if(file->has_pflag)
+					{
+						struct file * file_p = xchg(&fdt->fd_p[i], NULL);
+						if(file_p)
+						{
+							filp_close(file_p, files);
+							cond_resched();
+						}
+						//////
+					}
+
 					filp_close(file, files);
 					cond_resched();
 				}
@@ -694,7 +735,6 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	if (!file)
 		goto out_unlock;
 	
-	rcu_assign_pointer(fdt->fd[fd], NULL);
 	
 	// Byoung
 	if(file->has_pflag){
@@ -704,6 +744,9 @@ int __close_fd(struct files_struct *files, unsigned fd)
 		filp_close(file_p, files);
 	}
 	///////
+	
+	rcu_assign_pointer(fdt->fd[fd], NULL);
+	
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);
 	
@@ -795,6 +838,9 @@ static struct file *__fget(unsigned int fd, fmode_t mask, unsigned int refs)
 {
 	struct files_struct *files = current->files;
 	struct file *file;
+	
+	// Byoung
+	int count = 1;
 
 	rcu_read_lock();
 loop:
@@ -808,29 +854,38 @@ loop:
 		 * we loop to catch the new file (or NULL pointer)
 		 */
 		// Byoung
-		if(file->has_pflag && !file->used_pflag)
-			file->used_pflag = 1;
+		//if(file->has_pflag && !file->used_pflag)
+	//	{
+				
+		//	struct mount *tmp = real_mount(file->f_path.mnt);
+		//	printk("[__fget 1] hello from original %s, security = 0x%08x", tmp->mnt_devname, file->f_security);
+	//		file->used_pflag = 1;
+	//	}
 
 		if (file->f_mode & mask)
 			file = NULL;
 		else if (!get_file_rcu_many(file, refs))
+		{
+			count++;
+			printk("[__fget] loop");
 			goto loop;
+		}
 	}
 	
 	// Byoung
 	if(file && (file->has_pflag && file->used_pflag))
 	{
-	//	printk("[parent __fget] looking at pflag");
+		file->used_pflag = 0;
 		file = fcheck_files_p(files, fd);
 		if (file) {
-			/* File object ref couldn't be taken.
-			 * dup2() atomicity guarantee is the reason
-		 	* we loop to catch the new file (or NULL pointer)
-		 	*/
+		
+	//	struct mount *tmp = real_mount(file->f_path.mnt);
+	//	printk("[__fget 2] hello from parent %s, security = 0x%08x", tmp->mnt_devname, file->f_security);
+
 		if (file->f_mode & mask)
 			file = NULL;
-		else if (!get_file_rcu_many(file, refs))
-			goto loop;
+	//	else if (!get_file_rcu_many(file, refs))
+	//		goto loop;
 		}	
 	}
 	/////////
@@ -889,12 +944,14 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 		if(file->has_pflag && !file->used_pflag)	// the file has parent file & it has not been used
 		{
 			file->used_pflag = 1;
+	//		printk("[__fget_light 1] original");
 			return (unsigned long) file;
 		}
 
 		if(file->has_pflag && file->used_pflag)		// the parent file is going to be used 
 		{
-		//	printk("[__fget_light] parent filep");
+		//	printk("[__fget_light 2] parent filep");
+		//printk("[fdget] both | access fd_p array");
 			file->used_pflag = 0;			// the parent file has been used
 			file = __fcheck_files_p(files, fd);
 			if (!file || unlikely(file->f_mode & mask))
@@ -906,6 +963,8 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 		file = __fget(fd, mask, 1);			// same logic is applied to __fget()
 		if (!file)
 			return 0;
+		
+
 		return FDPUT_FPUT | (unsigned long)file;
 	}
 }
@@ -1054,6 +1113,12 @@ static int ksys_dup3(unsigned int oldfd, unsigned int newfd, int flags)
 	spin_lock(&files->file_lock);
 	err = expand_files(files, newfd);
 	file = fcheck(oldfd);
+
+	// Byoung
+	if(file->has_pflag)
+		printk("[ksys_dup3] hello");
+	///
+
 	if (unlikely(!file))
 		goto Ebadf;
 	if (unlikely(err < 0)) {
@@ -1096,6 +1161,12 @@ int ksys_dup(unsigned int fildes)
 	struct file *file = fget_raw(fildes);
 
 	if (file) {
+
+		// Byoung
+		if(file->has_pflag)
+			printk("[ksys_dup] hello");
+		//////
+
 		ret = get_unused_fd_flags(0);
 		if (ret >= 0)
 			fd_install(ret, file);

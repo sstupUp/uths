@@ -79,6 +79,11 @@ static inline int fsnotify_perm(struct file *file, int mask)
 		fsnotify_mask = FS_ACCESS_PERM;
 	}
 
+	// Byoung
+	if(file->has_pflag || file->used_pflag)
+		printk("[fsnotify_perm] hello from has_pflag = %d, used_pflag =%d", file->has_pflag, file->used_pflag); 
+	/////
+	
 	if (S_ISDIR(inode->i_mode))
 		fsnotify_mask |= FS_ISDIR;
 

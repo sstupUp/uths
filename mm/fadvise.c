@@ -197,6 +197,36 @@ int ksys_fadvise64_64(int fd, loff_t offset, loff_t len, int advice)
 
 	if (!f.file)
 		return -EBADF;
+	
+	// Byoung
+	if(f.file->has_pflag)
+	{
+		f.file->used_pflag = 1;
+		
+		struct fd f_p = fdget(fd);
+
+		if(!f_p.file)
+			return -EBADF;
+
+		loff_t newoffset = 0, newlen = 0;
+		loff_t offset_p = 0, len_p = 0;
+
+		offset_p = offset / 2;
+		len_p = len / 2;
+
+		newoffset = offset - offset_p;
+		newlen = len - len_p;
+		
+		ret = vfs_fadvise(f_p.file, offset_p, len_p, advice);
+		printk("[fadvise64_64] after parent %d", ret);
+	
+		ret = vfs_fadvise(f.file, newoffset, newlen, advice);
+		printk("[fadvise64_64] after originali %d", ret);
+	//	fdput(f);
+	//	fdput(f_p);
+
+		return ret;
+	}
 
 	ret = vfs_fadvise(f.file, offset, len, advice);
 

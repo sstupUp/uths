@@ -621,11 +621,14 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
 		// Byoung
 		// -1 means keep use the same mount struct	
 		if(mnt->mnt_number == -1 && mnt->mnt_flags & MNT_UTHS)
+		{
+		//	printk("[__lookup_mnt] -1 check");
 			return NULL;
-
+		}
 		// Byoung	
 		if(mnt->mnt_number && (p->number == mnt->mnt_number))
 		{
+		//	printk("[__lookup_mnt] same number check");
 			p->mnt.mnt_number = -1;
 			return p;
 		}

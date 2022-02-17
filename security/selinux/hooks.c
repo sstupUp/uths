@@ -3484,8 +3484,21 @@ static int selinux_file_permission(struct file *file, int mask)
 	if (!mask)
 		/* No permission to check.  Existence test. */
 		return 0;
-
+	
+	// Byoung
+//	if(file->has_pflag || file->used_pflag)
+//		printk("[selinux_file_permission 1] has_pflag = %d, used_pflag = %d,  &inode = 0x%08x", file->has_pflag, file->used_pflag, inode);
+	///////
+	
 	isec = inode_security(inode);
+	// Byoung
+//	if(file->has_pflag || file->used_pflag)
+//	{
+//		printk("[selinux_file_permission 2] has_pflag = %d, used_pflag = %d, &isec = 0x%08x", file->has_pflag, file->used_pflag, isec);
+//		printk("[selinux_file_permission 3] &fsec = 0x%08x", fsec); 
+//		
+//	}
+	////
 	if (sid == fsec->sid && fsec->isid == isec->sid &&
 	    fsec->pseqno == avc_policy_seqno(&selinux_state))
 		/* No change since file_open check. */

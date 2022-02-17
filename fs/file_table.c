@@ -52,6 +52,9 @@ static void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
+	if(f->has_pflag || f->used_pflag)
+		printk("[file_free] f_security = NULL part");
+
 	security_file_free(f);
 	if (!(f->f_mode & FMODE_NOACCOUNT))
 		percpu_counter_dec(&nr_files);

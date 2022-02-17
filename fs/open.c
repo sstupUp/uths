@@ -172,33 +172,105 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 	if (!f.file)
 		goto out;
 
-	/* explicitly opened as large or we are on 64-bit box */
-	if (f.file->f_flags & O_LARGEFILE)
-		small = 0;
+	// Byoung
+	if(f.file->has_pflag)
+	{
+		loff_t len_p = length / 2;
+		loff_t newlen = length - len_p;
 
-	dentry = f.file->f_path.dentry;
-	inode = dentry->d_inode;
-	error = -EINVAL;
-	if (!S_ISREG(inode->i_mode) || !(f.file->f_mode & FMODE_WRITE))
-		goto out_putf;
+		/* explicitly opened as large or we are on 64-bit box */
+		if (f.file->f_flags & O_LARGEFILE)
+			small = 0;
 
-	error = -EINVAL;
-	/* Cannot ftruncate over 2^31 bytes without large file support */
-	if (small && length > MAX_NON_LFS)
-		goto out_putf;
+		dentry = f.file->f_path.dentry;
+		inode = dentry->d_inode;
+		error = -EINVAL;
+		if (!S_ISREG(inode->i_mode) || !(f.file->f_mode & FMODE_WRITE))
+			goto out_putf;
+	
+		error = -EINVAL;
+		/* Cannot ftruncate over 2^31 bytes without large file support */
+		if (small && length > MAX_NON_LFS)
+			goto out_putf;
 
-	error = -EPERM;
-	/* Check IS_APPEND on real upper inode */
-	if (IS_APPEND(file_inode(f.file)))
-		goto out_putf;
+		error = -EPERM;
+		/* Check IS_APPEND on real upper inode */
+		if (IS_APPEND(file_inode(f.file)))
+			goto out_putf;
 
-	sb_start_write(inode->i_sb);
-	error = locks_verify_truncate(inode, f.file, length);
-	if (!error)
-		error = security_path_truncate(&f.file->f_path);
-	if (!error)
-		error = do_truncate(dentry, length, ATTR_MTIME|ATTR_CTIME, f.file);
-	sb_end_write(inode->i_sb);
+		sb_start_write(inode->i_sb);
+		error = locks_verify_truncate(inode, f.file, newlen);
+		if (!error)
+			error = security_path_truncate(&f.file->f_path);
+		if (!error)
+			error = do_truncate(dentry, newlen, ATTR_MTIME|ATTR_CTIME, f.file);
+		sb_end_write(inode->i_sb);
+
+		// parent
+		
+		f.file->used_pflag = 1;
+		struct fd f_p = fdget(fd);
+
+		/* explicitly opened as large or we are on 64-bit box */
+		if (f_p.file->f_flags & O_LARGEFILE)
+			small = 0;
+
+		dentry = f_p.file->f_path.dentry;
+		inode = dentry->d_inode;
+		error = -EINVAL;
+		if (!S_ISREG(inode->i_mode) || !(f_p.file->f_mode & FMODE_WRITE))
+			goto out_putf;
+	
+		error = -EINVAL;
+		/* Cannot ftruncate over 2^31 bytes without large file support */
+		if (small && length > MAX_NON_LFS)
+			goto out_putf;
+
+		error = -EPERM;
+		/* Check IS_APPEND on real upper inode */
+		if (IS_APPEND(file_inode(f_p.file)))
+			goto out_putf;
+
+		sb_start_write(inode->i_sb);
+		error = locks_verify_truncate(inode, f_p.file, len_p);
+		if (!error)
+			error = security_path_truncate(&f_p.file->f_path);
+		if (!error)
+			error = do_truncate(dentry, len_p, ATTR_MTIME|ATTR_CTIME, f_p.file);
+		sb_end_write(inode->i_sb);
+
+//		fdput(f_p);
+	}
+	else
+	{
+		if (f.file->f_flags & O_LARGEFILE)
+			small = 0;
+
+		dentry = f.file->f_path.dentry;
+		inode = dentry->d_inode;
+		error = -EINVAL;
+		if (!S_ISREG(inode->i_mode) || !(f.file->f_mode & FMODE_WRITE))
+			goto out_putf;
+	
+		error = -EINVAL;
+		/* Cannot ftruncate over 2^31 bytes without large file support */
+		if (small && length > MAX_NON_LFS)
+			goto out_putf;
+
+		error = -EPERM;
+		/* Check IS_APPEND on real upper inode */
+		if (IS_APPEND(file_inode(f.file)))
+			goto out_putf;
+
+		sb_start_write(inode->i_sb);
+		error = locks_verify_truncate(inode, f.file, length);
+		if (!error)
+			error = security_path_truncate(&f.file->f_path);
+		if (!error)
+			error = do_truncate(dentry, length, ATTR_MTIME|ATTR_CTIME, f.file);
+		sb_end_write(inode->i_sb);
+	}
+
 out_putf:
 	fdput(f);
 out:
@@ -332,9 +404,54 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 {
 	struct fd f = fdget(fd);
 	int error = -EBADF;
-
+	
+	// Byoung
+	loff_t offset_p = 0, len_p = 0;
+	loff_t newoffset = 0, newlen = 0;
+	///////
+	
 	if (f.file) {
+
+		if(fd > 3)
+		{
+			struct mount *tmp = real_mount(f.file->f_path.mnt);
+			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname);
+		}
+
+		// Byoung
+		if(f.file->has_pflag)
+		{	
+			offset_p = offset / 2;
+			len_p = len / 2;
+
+			newoffset = offset - offset_p;
+			newlen = len - len_p;
+	
+			f.file->used_pflag = 1;
+
+			struct fd f_p = fdget(fd);
+			printk("[ksys_fallocate 2] after fdget()");
+
+			struct mount * tmp = real_mount(f_p.file->f_path.mnt);
+			printk("[ksys_fallocate 3] has_pflag = %d, used_pflag = %d, %s", f_p.file->has_pflag, f_p.file->used_pflag, tmp->mnt_devname);
+
+			// parent
+			error = vfs_fallocate(f_p.file, mode, offset_p, len_p);
+			printk("[ksys_fallocate err 1] parent error = %d", error);	
+			// original
+			error = vfs_fallocate(f.file, mode, newoffset, newlen);
+			printk("[ksys_fallocate err 2] original error = %d", error);	
+			
+			f.file->used_pflag = 0;
+
+	//		fdput(f_p);
+	//		fdput(f);
+
+			return error;
+		}
+
 		error = vfs_fallocate(f.file, mode, offset, len);
+	
 		fdput(f);
 	}
 	return error;
@@ -1097,8 +1214,14 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		return fd;
 
 	tmp = getname(filename);
+
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);	
+	
+	// Byoung
+	tmp->fn_number = 0;
+	/////
+
 	fd = get_unused_fd_flags(flags);
 
 	if (fd >= 0) {
@@ -1110,10 +1233,15 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		} else {
 			// Byoung
 			/////////////////////////////////////////////////////////////	
-		
+			
+			f->has_pflag = 0;
+			f->used_pflag = 0;
+
 			// change this later for FIO	
 			if(!strncmp(tmp->name, "/labb/labb1", 11) && (strlen(tmp->name) >= 12))
 			{
+				
+				printk("[do_sys_open] uths open fd = %d", fd);
 
 				struct open_flags op_p;
 				int fd_p = build_open_flags((flags_p|(O_CREAT)), mode_p|0644, &op_p);
@@ -1122,6 +1250,9 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 				tmp->fn_number = 1;
 
 				struct file *p_f = do_filp_open(dfd, tmp, &op_p);
+			
+				tmp->fn_number = 0;
+
 				if(IS_ERR(p_f)){
 					printk("[do_sys_open] p_f error");
 					put_unused_fd(fd);
@@ -1132,12 +1263,16 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 
 					f->used_pflag = 0;
 					f->has_pflag = 1;
-					
+			
+					printk("[do_sys_open] original f->f_security = 0x%08x", f->f_security);
+
+					printk("[do_sys_open] parent f->f_security = 0x%08x", p_f->f_security);
 					fsnotify_open(f);
 					fd_install(fd, f);
-		
+
 					fsnotify_open(p_f);
 					fd_install(fd, p_f);
+						
 				}
 		//		putname(tmp);		
 			}else
@@ -1222,6 +1357,12 @@ int filp_close(struct file *filp, fl_owner_t id)
 		dnotify_flush(filp, id);
 		locks_remove_posix(filp, id);
 	}
+
+	// Byoung
+	if(filp->has_pflag || filp->used_pflag)
+		printk("[filp_close] hello");
+	/////
+	
 	fput(filp);
 	return retval;
 }

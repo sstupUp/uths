@@ -1558,6 +1558,11 @@ static int aio_write(struct kiocb *req, const struct iocb *iocb,
 		return ret;
 	file = req->ki_filp;
 
+	// Byoung
+	if(file->has_pflag)
+		printk("[aio_write] This is aio_write");
+	///
+
 	if (unlikely(!(file->f_mode & FMODE_WRITE)))
 		return -EBADF;
 	if (unlikely(!file->f_op->write_iter))
