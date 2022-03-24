@@ -221,7 +221,7 @@ int ksys_fadvise64_64(int fd, loff_t offset, loff_t len, int advice)
 		printk("[fadvise64_64] after parent %d", ret);
 	
 		ret = vfs_fadvise(f.file, newoffset, newlen, advice);
-		printk("[fadvise64_64] after originali %d", ret);
+		printk("[fadvise64_64] after original %d", ret);
 	//	fdput(f);
 	//	fdput(f_p);
 

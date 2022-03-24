@@ -2319,6 +2319,7 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 				goto out;
 		}
 
+		// Change access time
 		file_accessed(file);
 
 		retval = mapping->a_ops->direct_IO(iocb, iter);
@@ -2342,7 +2343,12 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 			goto out;
 	}
 
+	// Byoung
+	// the below function uses pages to read data
+	
 	retval = generic_file_buffered_read(iocb, iter, retval);
+	
+	// Direct IO goes straight to 'out'
 out:
 	return retval;
 }

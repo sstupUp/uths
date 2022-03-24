@@ -52,8 +52,10 @@ static void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
+	
+	// Byoung
 	if(f->has_pflag || f->used_pflag)
-		printk("[file_free] f_security = NULL part");
+		printk("[file_free] f_security = NULL part | has = %d, used = %d", f->has_pflag, f->used_pflag);
 
 	security_file_free(f);
 	if (!(f->f_mode & FMODE_NOACCOUNT))
@@ -341,6 +343,10 @@ void fput_many(struct file *file, unsigned int refs)
 {
 	if (atomic_long_sub_and_test(refs, &file->f_count)) {
 		struct task_struct *task = current;
+		
+		// Byoung
+		if(file->has_pflag || file->used_pflag)
+			printk("[fput_many] in if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, file->f_count);
 
 		if (likely(!in_interrupt() && !(task->flags & PF_KTHREAD))) {
 			init_task_work(&file->f_u.fu_rcuhead, ____fput);
@@ -356,6 +362,11 @@ void fput_many(struct file *file, unsigned int refs)
 		if (llist_add(&file->f_u.fu_llist, &delayed_fput_list))
 			schedule_delayed_work(&delayed_fput_work, 1);
 	}
+
+	// Byoung
+	if(file->has_pflag || file->used_pflag)
+		printk("[fput_many] outside of if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, file->f_count);
+
 }
 
 void fput(struct file *file)

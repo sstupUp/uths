@@ -401,8 +401,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 		rcu_assign_pointer(*new_fds++, f);
 		
 		// Byoung
-		++old_fds_p;
-		++new_fds_p;
+		*old_fds_p++;
+		*new_fds_p++;
 		//
 
 	}
@@ -839,9 +839,6 @@ static struct file *__fget(unsigned int fd, fmode_t mask, unsigned int refs)
 	struct files_struct *files = current->files;
 	struct file *file;
 	
-	// Byoung
-	int count = 1;
-
 	rcu_read_lock();
 loop:
 	file = fcheck_files(files, fd);
@@ -853,20 +850,12 @@ loop:
 		 * dup2() atomicity guarantee is the reason
 		 * we loop to catch the new file (or NULL pointer)
 		 */
-		// Byoung
-		//if(file->has_pflag && !file->used_pflag)
-	//	{
-				
-		//	struct mount *tmp = real_mount(file->f_path.mnt);
-		//	printk("[__fget 1] hello from original %s, security = 0x%08x", tmp->mnt_devname, file->f_security);
-	//		file->used_pflag = 1;
-	//	}
 
 		if (file->f_mode & mask)
 			file = NULL;
 		else if (!get_file_rcu_many(file, refs))
 		{
-			count++;
+			// Byoung
 			printk("[__fget] loop");
 			goto loop;
 		}
@@ -935,7 +924,7 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 
 	if (atomic_read(&files->count) == 1) {
 		file = __fcheck_files(files, fd);
-		//printk("[__fget_lignt] current->files : %s\n", file->f_path.dentry->d_parent->d_name.name);
+		
 		if (!file || unlikely(file->f_mode & mask))
 			return 0;
 
@@ -944,16 +933,14 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 		if(file->has_pflag && !file->used_pflag)	// the file has parent file & it has not been used
 		{
 			file->used_pflag = 1;
-	//		printk("[__fget_light 1] original");
 			return (unsigned long) file;
 		}
 
 		if(file->has_pflag && file->used_pflag)		// the parent file is going to be used 
 		{
-		//	printk("[__fget_light 2] parent filep");
-		//printk("[fdget] both | access fd_p array");
 			file->used_pflag = 0;			// the parent file has been used
 			file = __fcheck_files_p(files, fd);
+//			atomic_long_inc(&(file->f_count));
 			if (!file || unlikely(file->f_mode & mask))
 				return 0;
 		}
@@ -962,8 +949,29 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 	} else {
 		file = __fget(fd, mask, 1);			// same logic is applied to __fget()
 		if (!file)
-			return 0;
-		
+			return 0;	
+
+		////////	
+		// Byoung 
+		if(file->has_pflag && !file->used_pflag)	// the file has parent file & it has not been used
+		{
+			file->used_pflag = 1;
+			return FDPUT_FPUT | (unsigned long)file;
+		}
+
+		if(file->has_pflag && file->used_pflag)		// the parent file is going to be used 
+		{
+			file->used_pflag = 0;	
+						// the parent file has been used
+			file = __fcheck_files_p(files, fd);
+//			atomic_long_inc(&(file->f_count));
+			return FDPUT_FPUT | (unsigned long)file;
+		}
+			//////////////////
+
+		// Byoung
+		if(file->has_pflag)
+			printk("[__fget_light] FDPUT_FPUT section");
 
 		return FDPUT_FPUT | (unsigned long)file;
 	}
@@ -1055,7 +1063,9 @@ __releases(&files->file_lock)
 	if (!tofree && fd_is_open(fd, fdt))
 		goto Ebusy;
 	get_file(file);
+
 	rcu_assign_pointer(fdt->fd[fd], file);
+
 	__set_open_fd(fd, fdt);
 	if (flags & O_CLOEXEC)
 		__set_close_on_exec(fd, fdt);

@@ -26,7 +26,10 @@
 struct fdtable {
 	unsigned int max_fds;
 	struct file __rcu **fd;      /* current fd array */
-	struct file __rcu **fd_p;    // Byoung
+	
+	// Byoung
+	struct file __rcu **fd_p;
+
 	unsigned long *close_on_exec;
 	unsigned long *open_fds;
 	unsigned long *full_fds_bits;

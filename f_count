@@ -1,0 +1,3 @@
+/usr/src/uths/drivers/video/fbdev/ps3fb.c <unknown> 506 	atomic_inc(&ps3fb.f_count);
+/usr/src/uths/drivers/video/fbdev/ps3fb.c <unknown> 512 	if (atomic_dec_and_test(&ps3fb.f_count)) {
+/usr/src/uths/drivers/video/fbdev/ps3fb.c <unknown> 995 	atomic_set(&ps3fb.f_count, -1);	/* fbcon opens ps3fb */

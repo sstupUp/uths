@@ -161,7 +161,7 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 {
 	struct inode *inode;
 	struct dentry *dentry;
-	struct fd f;
+	struct fd f, f_p;
 	int error;
 
 	error = -EINVAL;
@@ -209,7 +209,7 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 		// parent
 		
 		f.file->used_pflag = 1;
-		struct fd f_p = fdget(fd);
+		f_p = fdget(fd);
 
 		/* explicitly opened as large or we are on 64-bit box */
 		if (f_p.file->f_flags & O_LARGEFILE)
@@ -239,7 +239,6 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 			error = do_truncate(dentry, len_p, ATTR_MTIME|ATTR_CTIME, f_p.file);
 		sb_end_write(inode->i_sb);
 
-//		fdput(f_p);
 	}
 	else
 	{
@@ -272,6 +271,9 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 	}
 
 out_putf:
+	// Byoung
+//	if(f.file->has_pflag)
+//		fdput(f_p);
 	fdput(f);
 out:
 	return error;
@@ -413,9 +415,9 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 	if (f.file) {
 
 		if(fd > 3)
-		{
+		{	
 			struct mount *tmp = real_mount(f.file->f_path.mnt);
-			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname);
+			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s, count = %d", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname, f.file->f_count);
 		}
 
 		// Byoung
@@ -430,7 +432,7 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 			f.file->used_pflag = 1;
 
 			struct fd f_p = fdget(fd);
-			printk("[ksys_fallocate 2] after fdget()");
+			printk("[ksys_fallocate 2] after fdget() ori_count = %d, p_count = %d", f.file->f_count, f_p.file->f_count);
 
 			struct mount * tmp = real_mount(f_p.file->f_path.mnt);
 			printk("[ksys_fallocate 3] has_pflag = %d, used_pflag = %d, %s", f_p.file->has_pflag, f_p.file->used_pflag, tmp->mnt_devname);
@@ -444,8 +446,8 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 			
 			f.file->used_pflag = 0;
 
-	//		fdput(f_p);
-	//		fdput(f);
+//			fdput(f_p);
+			fdput(f);
 
 			return error;
 		}
@@ -1241,7 +1243,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 			if(!strncmp(tmp->name, "/labb/labb1", 11) && (strlen(tmp->name) >= 12))
 			{
 				
-				printk("[do_sys_open] uths open fd = %d", fd);
+				printk("[do_sys_open] -------------- uths open fd = %d --------------", fd);
 
 				struct open_flags op_p;
 				int fd_p = build_open_flags((flags_p|(O_CREAT)), mode_p|0644, &op_p);
@@ -1264,9 +1266,9 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					f->used_pflag = 0;
 					f->has_pflag = 1;
 			
-					printk("[do_sys_open] original f->f_security = 0x%08x", f->f_security);
+					printk("[do_sys_open] original f->f_security = 0x%08x, f_count = %d", f->f_security, f->f_count);
 
-					printk("[do_sys_open] parent f->f_security = 0x%08x", p_f->f_security);
+					printk("[do_sys_open] parent f->f_security = 0x%08x, f_count = %d", p_f->f_security, p_f->f_count);
 					fsnotify_open(f);
 					fd_install(fd, f);
 

@@ -637,7 +637,7 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 
 	// Byoung
 	if(f.file && f.file->has_pflag) {
-	//	printk("[ksys_read] file && file_p");
+		printk("[ksys_read] file && file_p");
 		
 		loff_t pos, *ppos = file_ppos(f.file);
 		if(ppos) {
@@ -659,34 +659,34 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 		// spliting 'count' argument
 		size_t count_p = count/2;	// for the parent
 		size_t count_new = count-count_p;	// for the original
+	
+		// Checking addr.	
+		struct mount* tmp = real_mount(f.file->f_path.mnt);
+		struct inode* tmp_i = file_inode(f.file);
+		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f.file->has_pflag, f.file->used_pflag, tmp_i, f.file->f_security);
 		
-	//	struct mount* tmp = real_mount(f.file->f_path.mnt);
+		tmp = real_mount(f_p.file->f_path.mnt);
+		tmp_i = file_inode(f_p.file);
+		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_security);
+		//
 
-	//	printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d", tmp->mnt_devname, f.file->has_pflag, f.file->used_pflag);
-		
-	//	tmp = real_mount(f_p.file->f_path.mnt);
-	//	printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag);
-		
-	//	printk("[ksys_read] count_p = %ld, count_new = %ld", count_p, count_new);
-
-		ret = vfs_read(f.file, buf+count_p, count_new, ppos);
-		
 		ret_p = vfs_read(f_p.file, buf, count_p, ppos_p);
+		ret = vfs_read(f.file, buf+count_p, count_new, ppos);
 
-	//	printk("[ksys_read] ret_p = %ld", ret_p);
+		printk("[ksys_read] ret_p = %ld", ret_p);
 
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
 		
-	//	printk("[ksys_read] ret = %ld", ret);
+		printk("[ksys_read] ret = %ld", ret);
 
 		if(ret >= 0 && ppos){
 			f.file->f_pos = pos;
 			ret += ret_p;
 		}
 		fdput_pos(f);
-		fdput_pos(f_p);
+	//	fdput_pos(f_p);
 
 	}
 	// just file
@@ -759,7 +759,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 		size_t count_p = count/2;	// for the parent
 		size_t count_new = count - count_p;	// for the original
 
-	//	printk("[ksys_write] count_p = %ld, count_new = %ld", count_p, count_new);
+		printk("[ksys_write] count_p = %ld, count_new = %ld", count_p, count_new);
 		
 	//	struct mount* tmp = real_mount(f.file->f_path.mnt);
 	//	struct inode* tmp_i = file_inode(f.file);
@@ -769,14 +769,15 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	//	tmp_i = file_inode(f_p.file);
 	//	printk("[ksys_write] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_security);
 		
-		ret = vfs_write(f.file, buf+count_p, count_new, ppos);
 		ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
+		ret = vfs_write(f.file, buf+count_p, count_new, ppos);
 		
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
 	
-	//	printk("[ksys_write] ret_p = %ld", ret_p);
+		printk("[ksys_write] ret = %ld", ret);
+		printk("[ksys_write] ret_p = %ld", ret_p);
 	
 		if(ret >= 0 && ppos){
 			f.file->f_pos = pos;

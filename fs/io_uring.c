@@ -1278,6 +1278,10 @@ static int io_read(struct io_kiocb *req, const struct sqe_submit *s,
 	if (unlikely(!file->f_op->read_iter))
 		return -EINVAL;
 
+	// Byoung
+	if(file->has_pflag || file->used_pflag)
+		printk("[io_read] has_pflag = %d, used_pflag = %d", file->has_pflag, file->used_pflag); 
+
 	ret = io_import_iovec(req->ctx, READ, s, &iovec, &iter);
 	if (ret < 0)
 		return ret;
