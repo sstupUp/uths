@@ -376,7 +376,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 			get_file(f);
 	
 			// Byoung	
-			if(f->has_pflag)
+			if(f->has_pflag == 1)
 			{
 				struct file *f_p = *old_fds_p;
 				if (f_p) 
@@ -448,7 +448,7 @@ static struct fdtable *close_files(struct files_struct * files)
 				if (file) {
 			
 					// Byoung
-					if(file->has_pflag)
+					if(file->has_pflag == 1)
 					{
 						struct file * file_p = xchg(&fdt->fd_p[i], NULL);
 						if(file_p)
@@ -737,7 +737,7 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	
 	
 	// Byoung
-	if(file->has_pflag){
+	if(file->has_pflag == 1){
 		printk("[__close_fd] pflag | fd = %d", fd);
 		file_p = fdt->fd_p[fd];
 		rcu_assign_pointer(fdt->fd_p[fd], NULL);
@@ -776,6 +776,7 @@ int __close_fd_get_file(unsigned int fd, struct file **res)
 	file = fdt->fd[fd];
 	if (!file)
 		goto out_unlock;
+	
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);
@@ -815,7 +816,7 @@ void do_close_on_exec(struct files_struct *files)
 				continue;
 			
 			// byoung
-			if(file->has_pflag && !file->used_pflag){
+			if((file->has_pflag == 1) && !file->used_pflag){
 			//	printk("[__close_fd] pflag");
 				file_p = fdt->fd_p[fd];
 				rcu_assign_pointer(fdt->fd_p[fd], NULL);
@@ -853,28 +854,41 @@ loop:
 
 		if (file->f_mode & mask)
 			file = NULL;
-		else if (!get_file_rcu_many(file, refs))
+		
+		if(file && (file->has_pflag==1) && file->used_pflag)
 		{
+//			printk("[__fget] hey");
+		}
+		else
+		{
+		       	if (!get_file_rcu_many(file, refs))
+			{
 			// Byoung
+			// Enter here if f_count is zero
 			printk("[__fget] loop");
 			goto loop;
+			}
 		}
 	}
 	
 	// Byoung
-	if(file && (file->has_pflag && file->used_pflag))
+	// used_pflag with has_pflag is set by caller
+	if(file && ((file->has_pflag == 1) && file->used_pflag))
 	{
 		file->used_pflag = 0;
-		file = fcheck_files_p(files, fd);
+		long dum_cnt = atomic_long_read(&file->f_count);
+
+loop_p:		file = fcheck_files_p(files, fd);
 		if (file) {
 		
-	//	struct mount *tmp = real_mount(file->f_path.mnt);
-	//	printk("[__fget 2] hello from parent %s, security = 0x%08x", tmp->mnt_devname, file->f_security);
+//		struct mount *tmp = real_mount(file->f_path.mnt);
+//		printk("[__fget 2] hello from parent %s, security = 0x%08x", tmp->mnt_devname, file->f_security);
 
 		if (file->f_mode & mask)
 			file = NULL;
-	//	else if (!get_file_rcu_many(file, refs))
-	//		goto loop;
+//		get_file_rcu_many(file, refs);
+//		printk("[__fget] hello dum_cnt = %d", dum_cnt);
+		atomic_long_set(&file->f_count, dum_cnt);
 		}	
 	}
 	/////////
@@ -930,48 +944,58 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 
 		// Byoung
 		 
-		if(file->has_pflag && !file->used_pflag)	// the file has parent file & it has not been used
+		if((file->has_pflag == 1) && !file->used_pflag)	// the file has parent file & it has not been used
 		{
-			file->used_pflag = 1;
+			// Calling function sets up the used_pflag
+		//	file->used_pflag = 1;
 			return (unsigned long) file;
 		}
 
-		if(file->has_pflag && file->used_pflag)		// the parent file is going to be used 
+		if((file->has_pflag == 1) && file->used_pflag)		// the parent file is going to be used 
 		{
 			file->used_pflag = 0;			// the parent file has been used
+			
+//			printk("[__fget_light] f->has = %d, f->used = %d", file->has_pflag, file->used_pflag);
+
 			file = __fcheck_files_p(files, fd);
+
+		//	printk("[__fget_light] p->has = %d, p ->used = %d", file->has_pflag, file->used_pflag);
+
 //			atomic_long_inc(&(file->f_count));
 			if (!file || unlikely(file->f_mode & mask))
 				return 0;
 		}
 		///////////
+
 		return (unsigned long)file;
 	} else {
 		file = __fget(fd, mask, 1);			// same logic is applied to __fget()
 		if (!file)
 			return 0;	
+		
+		// Byoung
+//		if((file->has_pflag == 1))
+//			printk("[__fget_light] FDPUT_FPUT section");
+
 
 		////////	
 		// Byoung 
-		if(file->has_pflag && !file->used_pflag)	// the file has parent file & it has not been used
+		if((file->has_pflag==1) && !file->used_pflag)	// the file has parent file & it has not been used
 		{
-			file->used_pflag = 1;
+		//	file->used_pflag = 1;
 			return FDPUT_FPUT | (unsigned long)file;
 		}
 
-		if(file->has_pflag && file->used_pflag)		// the parent file is going to be used 
+		if((file->has_pflag ==1 )&& file->used_pflag)		// the parent file is going to be used 
 		{
 			file->used_pflag = 0;	
 						// the parent file has been used
+
 			file = __fcheck_files_p(files, fd);
-//			atomic_long_inc(&(file->f_count));
+			
 			return FDPUT_FPUT | (unsigned long)file;
 		}
 			//////////////////
-
-		// Byoung
-		if(file->has_pflag)
-			printk("[__fget_light] FDPUT_FPUT section");
 
 		return FDPUT_FPUT | (unsigned long)file;
 	}
@@ -1064,6 +1088,15 @@ __releases(&files->file_lock)
 		goto Ebusy;
 	get_file(file);
 
+	// Byoung
+//	if((fd > 3) && (file->has_pflag || file->used_pflag))
+//		printk("[do_dup2] hello file has = %d, used = %d", file->has_pflag, file->used_pflag);
+
+	// Byoung
+//	if((fd > 3) && (tofree->has_pflag || tofree->used_pflag))
+//		printk("[do_dup2] hello tofree has = %d, used = %d", tofree->has_pflag, tofree->used_pflag);
+//
+
 	rcu_assign_pointer(fdt->fd[fd], file);
 
 	__set_open_fd(fd, fdt);
@@ -1125,7 +1158,7 @@ static int ksys_dup3(unsigned int oldfd, unsigned int newfd, int flags)
 	file = fcheck(oldfd);
 
 	// Byoung
-	if(file->has_pflag)
+	if((file->has_pflag == 1))
 		printk("[ksys_dup3] hello");
 	///
 
@@ -1173,7 +1206,7 @@ int ksys_dup(unsigned int fildes)
 	if (file) {
 
 		// Byoung
-		if(file->has_pflag)
+		if((file->has_pflag == 1))
 			printk("[ksys_dup] hello");
 		//////
 

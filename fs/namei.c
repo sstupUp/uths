@@ -1348,11 +1348,14 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		// Byoung
 		if(nd->nd_number)
 		{
+//			printk("[__follow_mount_rcu] before __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
 			path->mnt->mnt_number = nd->nd_number;
 			
 			if(count == 1)
 				path->mnt->mnt_number = -1;
 		}
+		else
+			path->mnt->mnt_number = 0;
 		///////
 
 		mounted = __lookup_mnt(path->mnt, path->dentry);
@@ -1360,7 +1363,12 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		{	
 			// Byoung
 			if(nd->nd_number)
-				path->mnt->mnt_number = nd->nd_number;
+			{
+
+//				printk("[__follow_mount_rcu] after __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
+			
+				path->mnt->mnt_number = 2; //nd->nd_number;
+			}
 			break;
 		}
 
@@ -1642,12 +1650,20 @@ static int lookup_fast(struct nameidata *nd,
 				return -ENOENT;
 			path->mnt = mnt;
 			path->dentry = dentry;
-							
+		
+			// Byoung
+			
+	//		printk("[lookup_fast] before __follow_mount_rcr() mnt_number = %d", mnt->mnt_number);
+
 			if (likely(__follow_mount_rcu(nd, path, inode, seqp)))
 			{
 				// Byoung
 				// reset
-				path->mnt->mnt_number = 0;
+				if(nd->nd_number > 0)
+				{
+				//	printk("[lookup_fast] reset mnt_number");
+					path->mnt->mnt_number = 0;
+				}
 
 				return 1;
 			}
@@ -3626,7 +3642,11 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 
 	// Byoung
 	if((pathname->fn_number < 4) && (pathname->fn_number > 0))
+	{
+		printk("[do_filp_open] before path_openat fn = %d, nd = %d", pathname->fn_number, nd.nd_number);
 		nd.nd_number = pathname->fn_number;
+	
+	}
 	/////////
 
 	filp = path_openat(&nd, op, flags | LOOKUP_RCU);
@@ -3637,7 +3657,18 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
 
 	// Byoung
+	if((pathname->fn_number < 4) && (pathname->fn_number > 0))
+	{
+		//nd.nd_number = pathname->fn_number;
+		printk("[do_filp_open] after path_openat fn = %d, nd = %d", pathname->fn_number, nd.nd_number);
+	
+	}
+	/////////
+
+
+	// Byoung
 	nd.nd_number = 0;
+	pathname->fn_number = 0;
 	/////
 
 	restore_nameidata();
@@ -4109,7 +4140,20 @@ long do_unlinkat(int dfd, struct filename *name)
 	struct inode *delegated_inode = NULL;
 	unsigned int lookup_flags = 0;
 	// Byoung
-//	struct filename * name_ori = name;
+	struct filename * name_ori = name;
+
+	int flag = 0;
+
+	if(!strncmp(name->name, "/labb/labb1", 11))
+	{
+		printk("[do_unlinkat] uths");
+		flag = 1;
+	}
+	/////////////////
+
+	// Byoung
+	if(!strncmp(name->name, "/dummy", 6))
+		printk("[do_unlinkat test] hello");
 
 retry:
 	name->fn_number = 0;
@@ -4160,12 +4204,12 @@ exit1:
 		inode = NULL;
 		goto retry;
 	}
-	putname(name);
+//	putname(name);
 
-	return error;
-	/*
+//	return error;
+/*
 	// Byoung
-	if(!strncmp(name->name, "/labb/labb1", 11))
+	if(flag == 1)
 	{
 		name = name_ori;
 
@@ -4184,6 +4228,8 @@ exit1:
 		if (IS_ERR(name))
 			return PTR_ERR(name);
 
+		printk("[do_unlinkat] name = %s", name->name);
+
 		error = -EISDIR;
 		if (type_p != LAST_NORM)
 			goto exit1_p;
@@ -4191,12 +4237,15 @@ exit1:
 		error = mnt_want_write(path_p.mnt);
 		if (error)
 			goto exit1_p;
+		
+		printk("[dp_unlinkat] before retry_deleg");
+
 	retry_deleg_p:
 		inode_lock_nested(path_p.dentry->d_inode, I_MUTEX_PARENT);
 		dentry = __lookup_hash(&last_p, path_p.dentry, lookup_flags_p);
 		error = PTR_ERR(dentry_p);
 		if (!IS_ERR(dentry_p)) {
-			* Why not before? Because we want correct error value *
+		//	* Why not before? Because we want correct error value *
 			if (last_p.name[last_p.len])
 				goto slashes_p;
 			inode_p = dentry_p->d_inode;
@@ -4207,12 +4256,14 @@ exit1:
 			if (error)
 				goto exit2_p;
 			error = vfs_unlink(path_p.dentry->d_inode, dentry_p, &delegated_inode_p);
+		
+		printk("[dp_unlinkat] before exit2 | unlink ret = %d", error);
 	exit2_p:
 			dput(dentry_p);
 		}
 		inode_unlock(path_p.dentry->d_inode);
 		if (inode_p)
-			iput(inode_p);	* truncate the inode here *
+			iput(inode_p);//	* truncate the inode here *
 		inode_p = NULL;
 		if (delegated_inode_p) {
 			error = break_deleg_wait(&delegated_inode_p);
@@ -4220,6 +4271,8 @@ exit1:
 				goto retry_deleg_p;
 		}
 		mnt_drop_write(path_p.mnt);
+
+		printk("[dp_unlinkat] before exit1");
 	exit1_p:
 		path_put(&path_p);
 		if (retry_estale(error, lookup_flags_p)) {
@@ -4227,7 +4280,7 @@ exit1:
 			inode_p = NULL;
 			goto retry_p;
 		}
-		putname(name);
+//		putname(name);
 		goto uths;
 
 	slashes_p:
@@ -4242,10 +4295,11 @@ exit1:
 
 		printk("[do_unlinkat] %s", name->name);
 	}
-
-uths:
-	return error;
 */
+uths:
+	putname(name);
+	return error;
+
 slashes:
 	if (d_is_negative(dentry))
 		error = -ENOENT;

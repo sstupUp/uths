@@ -1559,7 +1559,7 @@ static int aio_write(struct kiocb *req, const struct iocb *iocb,
 	file = req->ki_filp;
 
 	// Byoung
-	if(file->has_pflag)
+	if(file->has_pflag == 1)
 		printk("[aio_write] This is aio_write");
 	///
 

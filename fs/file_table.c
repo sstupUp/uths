@@ -54,8 +54,8 @@ static inline void file_free(struct file *f)
 {
 	
 	// Byoung
-	if(f->has_pflag || f->used_pflag)
-		printk("[file_free] f_security = NULL part | has = %d, used = %d", f->has_pflag, f->used_pflag);
+	if((f->has_pflag == 1) || f->used_pflag)
+		printk("[file_free] f_security = NULL part | has = %d, used = %d, f_count = %d", f->has_pflag, f->used_pflag, atomic_long_read(&(f->f_count)));
 
 	security_file_free(f);
 	if (!(f->f_mode & FMODE_NOACCOUNT))
@@ -345,8 +345,8 @@ void fput_many(struct file *file, unsigned int refs)
 		struct task_struct *task = current;
 		
 		// Byoung
-		if(file->has_pflag || file->used_pflag)
-			printk("[fput_many] in if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, file->f_count);
+		if((file->has_pflag == 1) || file->used_pflag)
+			printk("[fput_many] in if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, atomic_long_read(&(file->f_count)));
 
 		if (likely(!in_interrupt() && !(task->flags & PF_KTHREAD))) {
 			init_task_work(&file->f_u.fu_rcuhead, ____fput);
@@ -364,8 +364,8 @@ void fput_many(struct file *file, unsigned int refs)
 	}
 
 	// Byoung
-	if(file->has_pflag || file->used_pflag)
-		printk("[fput_many] outside of if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, file->f_count);
+//	if(file->has_pflag || file->used_pflag)
+//		printk("[fput_many] outside of if state has = %d, used = %d, count = %d", file->has_pflag, file->used_pflag, atomic_long_read(&(file->f_count)));
 
 }
 

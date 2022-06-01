@@ -199,12 +199,14 @@ int ksys_fadvise64_64(int fd, loff_t offset, loff_t len, int advice)
 		return -EBADF;
 	
 	// Byoung
-	if(f.file->has_pflag)
+	if((f.file->has_pflag == 1))
 	{
 		f.file->used_pflag = 1;
 		
 		struct fd f_p = fdget(fd);
 
+		f.file->used_pflag = 0;
+		
 		if(!f_p.file)
 			return -EBADF;
 
@@ -218,12 +220,12 @@ int ksys_fadvise64_64(int fd, loff_t offset, loff_t len, int advice)
 		newlen = len - len_p;
 		
 		ret = vfs_fadvise(f_p.file, offset_p, len_p, advice);
-		printk("[fadvise64_64] after parent %d", ret);
+		printk("[fadvise64_64] after parent %d, f_count = %d", ret, atomic_long_read(&f_p.file->f_count));
 	
 		ret = vfs_fadvise(f.file, newoffset, newlen, advice);
-		printk("[fadvise64_64] after original %d", ret);
-	//	fdput(f);
-	//	fdput(f_p);
+		printk("[fadvise64_64] after original %d, f_count = %d", ret, atomic_long_read(&f.file->f_count));
+		fdput(f);
+		fdput(f_p);
 
 		return ret;
 	}

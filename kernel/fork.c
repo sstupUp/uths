@@ -554,6 +554,7 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 			struct address_space *mapping = file->f_mapping;
 
 			get_file(file);
+
 			if (tmp->vm_flags & VM_DENYWRITE)
 				atomic_dec(&inode->i_writecount);
 			i_mmap_lock_write(mapping);

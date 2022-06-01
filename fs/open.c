@@ -173,12 +173,17 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 		goto out;
 
 	// Byoung
-	if(f.file->has_pflag)
+	if(f.file->has_pflag == 1)
 	{
+		printk("[ftruncate] hello");
+	
+		f.file->used_pflag = 1;
+		f_p = fdget(fd);
+
 		loff_t len_p = length / 2;
 		loff_t newlen = length - len_p;
 
-		/* explicitly opened as large or we are on 64-bit box */
+//		* explicitly opened as large or we are on 64-bit box *
 		if (f.file->f_flags & O_LARGEFILE)
 			small = 0;
 
@@ -186,15 +191,15 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 		inode = dentry->d_inode;
 		error = -EINVAL;
 		if (!S_ISREG(inode->i_mode) || !(f.file->f_mode & FMODE_WRITE))
-			goto out_putf;
-	
+			goto out_putf;	 
+
 		error = -EINVAL;
-		/* Cannot ftruncate over 2^31 bytes without large file support */
+//		* Cannot ftruncate over 2^31 bytes without large file support *
 		if (small && length > MAX_NON_LFS)
 			goto out_putf;
 
 		error = -EPERM;
-		/* Check IS_APPEND on real upper inode */
+//		* Check IS_APPEND on real upper inode *
 		if (IS_APPEND(file_inode(f.file)))
 			goto out_putf;
 
@@ -207,11 +212,9 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 		sb_end_write(inode->i_sb);
 
 		// parent
-		
-		f.file->used_pflag = 1;
-		f_p = fdget(fd);
+		printk("[ftruncate] checking parent");
 
-		/* explicitly opened as large or we are on 64-bit box */
+//		* explicitly opened as large or we are on 64-bit box *
 		if (f_p.file->f_flags & O_LARGEFILE)
 			small = 0;
 
@@ -222,12 +225,15 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 			goto out_putf;
 	
 		error = -EINVAL;
-		/* Cannot ftruncate over 2^31 bytes without large file support */
+//		* Cannot ftruncate over 2^31 bytes without large file support *
+		
+		printk("[ftruncate] checking MAX_NON_LFS");
 		if (small && length > MAX_NON_LFS)
 			goto out_putf;
 
 		error = -EPERM;
-		/* Check IS_APPEND on real upper inode */
+//		* Check IS_APPEND on real upper inode *
+		printk("[ftruncate] checking IS_APPEND");
 		if (IS_APPEND(file_inode(f_p.file)))
 			goto out_putf;
 
@@ -237,13 +243,17 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 			error = security_path_truncate(&f_p.file->f_path);
 		if (!error)
 			error = do_truncate(dentry, len_p, ATTR_MTIME|ATTR_CTIME, f_p.file);
-		sb_end_write(inode->i_sb);
-
+		sb_end_write(inode->i_sb); 
 	}
 	else
 	{
 		if (f.file->f_flags & O_LARGEFILE)
 			small = 0;
+		
+		// Byoung
+		if(f.file->has_pflag == -2)
+			printk("[ftruncate_test] count = %d", atomic_long_read(&f.file->f_count));
+		////////
 
 		dentry = f.file->f_path.dentry;
 		inode = dentry->d_inode;
@@ -272,8 +282,8 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 
 out_putf:
 	// Byoung
-//	if(f.file->has_pflag)
-//		fdput(f_p);
+	if(f.file->has_pflag == 1)
+		fdput(f_p);
 	fdput(f);
 out:
 	return error;
@@ -417,11 +427,14 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 		if(fd > 3)
 		{	
 			struct mount *tmp = real_mount(f.file->f_path.mnt);
-			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s, count = %d", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname, f.file->f_count);
+			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s, count = %d", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname, atomic_long_read(&f.file->f_count));
 		}
+		
+		if(f.file->has_pflag == -2)
+			printk("[ksys_fallocate test] count = %d", atomic_long_read(&f.file->f_count));
 
 		// Byoung
-		if(f.file->has_pflag)
+		if(f.file->has_pflag == 1)
 		{	
 			offset_p = offset / 2;
 			len_p = len / 2;
@@ -432,26 +445,38 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 			f.file->used_pflag = 1;
 
 			struct fd f_p = fdget(fd);
-			printk("[ksys_fallocate 2] after fdget() ori_count = %d, p_count = %d", f.file->f_count, f_p.file->f_count);
+			f.file->used_pflag = 0;
+			
+			printk("[ksys_fallocate 2] after fdget() ori_count = %d, p_count = %d", f.file->f_count, atomic_long_read(&f_p.file->f_count));
 
 			struct mount * tmp = real_mount(f_p.file->f_path.mnt);
 			printk("[ksys_fallocate 3] has_pflag = %d, used_pflag = %d, %s", f_p.file->has_pflag, f_p.file->used_pflag, tmp->mnt_devname);
+			
+			// Byoung
+			// Setting refcnt of parent file
+			// int dummy =(int)atomic_long_read(&f.file->f_count);
+			// atomic_long_set(&f_p.file->f_count, dummy);
 
 			// parent
-			error = vfs_fallocate(f_p.file, mode, offset_p, len_p);
-			printk("[ksys_fallocate err 1] parent error = %d", error);	
+			int err = -EBADF;
+			err = vfs_fallocate(f_p.file, mode, offset_p, len_p);
+			printk("[ksys_fallocate err 1] parent error = %d", err);	
 			// original
+			printk("[ksys_fallocate] after vfs_p() p_count = %d", atomic_long_read(&f_p.file->f_count));
 			error = vfs_fallocate(f.file, mode, newoffset, newlen);
 			printk("[ksys_fallocate err 2] original error = %d", error);	
 			
-			f.file->used_pflag = 0;
+			printk("[ksys_fallocate] after vfs() count = %d", atomic_long_read(&f.file->f_count));
 
-//			fdput(f_p);
+			fdput(f_p);
 			fdput(f);
 
-			return error;
+			return error + err;
 		}
-
+	
+		// Byoung	
+		if(f.file->has_pflag == -2)
+			printk("[ksys_fallocate_test] ori_count = %d", atomic_long_read(&f.file->f_count));
 		error = vfs_fallocate(f.file, mode, offset, len);
 	
 		fdput(f);
@@ -922,13 +947,9 @@ static int do_dentry_open(struct file *f,
 		if (error)
 			goto cleanup_all;
 	}
-	/* ///////////////////////////////////////////////////////////////// */
-	/*						                     */
-	/*                                                                   */
-	/* prinkt(KERN_INFO "do_dentry_open, open func: %s\n",(char*) open); */
-	/*                                                                   */
-	/*                                                                   */	
-	/* ///////////////////////////////////////////////////////////////// */
+
+	// Byoung
+	/* printk(KERN_INFO "do_dentry_open, open func: %s\n",(char*) open); */
 
 	f->f_mode |= FMODE_OPENED;
 	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
@@ -1035,7 +1056,10 @@ EXPORT_SYMBOL(file_path);
 int vfs_open(const struct path *path, struct file *file)
 {
 	file->f_path = *path;
+	
+	// Byoung
 	//printk("vfs/open.c/vfs_open(): Using %s", path->dentry->d_name.name);
+	
 	return do_dentry_open(file, d_backing_inode(path->dentry), NULL);
 }
 
@@ -1246,7 +1270,8 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 				printk("[do_sys_open] -------------- uths open fd = %d --------------", fd);
 
 				struct open_flags op_p;
-				int fd_p = build_open_flags((flags_p|(O_CREAT)), mode_p|0644, &op_p);
+				flags_p = flags;
+				int fd_p = build_open_flags((flags_p), mode_p|0777, &op_p);
 
 				// device number
 				tmp->fn_number = 1;
@@ -1265,10 +1290,15 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 
 					f->used_pflag = 0;
 					f->has_pflag = 1;
-			
-					printk("[do_sys_open] original f->f_security = 0x%08x, f_count = %d", f->f_security, f->f_count);
+		
+					struct inode * tmp = file_inode(f);
+					struct mount* mnt = real_mount(f->f_path.mnt);
 
-					printk("[do_sys_open] parent f->f_security = 0x%08x, f_count = %d", p_f->f_security, p_f->f_count);
+					printk("[do_sys_open] %s | original inode = 0x%08x, f_count = %d has = %d, used = %d", mnt->mnt_devname, tmp, f->f_count, f->has_pflag, f->used_pflag);
+
+					tmp = file_inode(p_f);
+					mnt = real_mount(p_f->f_path.mnt);
+					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag);
 					fsnotify_open(f);
 					fd_install(fd, f);
 
@@ -1279,6 +1309,15 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		//		putname(tmp);		
 			}else
 			{
+				
+				// Byoung
+				if(!strncmp(tmp->name, "/dummy", 6))
+				{
+					f->has_pflag = -2;
+					printk("[do_sys_open test] name = %s, f_count = %d, flags = %08o", tmp->name, f->f_count, flags);
+				}
+				//////
+
 				fsnotify_open(f);
 				fd_install(fd, f);
 			}
@@ -1361,10 +1400,13 @@ int filp_close(struct file *filp, fl_owner_t id)
 	}
 
 	// Byoung
-	if(filp->has_pflag || filp->used_pflag)
+	if((filp->has_pflag == 1) || filp->used_pflag)
 		printk("[filp_close] hello");
-	/////
 	
+	if(filp->has_pflag == -2)
+		printk("[filp_close test] hello");
+	/////
+
 	fput(filp);
 	return retval;
 }

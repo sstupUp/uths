@@ -1583,6 +1583,11 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 		retval = -EINVAL;
 		if (unlikely(flags & MAP_HUGETLB && !is_file_hugepages(file)))
 			goto out_fput;
+
+		// Byoung
+		if((file->has_pflag == 1) || file->used_pflag)
+			printk("[ksys_mmap_pgoff] hello");
+
 	} else if (flags & MAP_HUGETLB) {
 		struct user_struct *user = NULL;
 		struct hstate *hs;
@@ -2966,6 +2971,7 @@ SYSCALL_DEFINE5(remap_file_pages, unsigned long, start, unsigned long, size,
 	}
 
 	file = get_file(vma->vm_file);
+
 	ret = do_mmap_pgoff(vma->vm_file, start, size,
 			prot, flags, pgoff, &populate, NULL);
 	fput(file);

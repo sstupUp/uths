@@ -969,6 +969,10 @@ static void io_file_put(struct io_submit_state *state)
 	if (state->file) {
 		int diff = state->has_refs - state->used_refs;
 
+		// Byoung
+		if(state->file->has_pflag || state->file->used_pflag)
+			printk("[io_file_put] new funciton");
+
 		if (diff)
 			fput_many(state->file, diff);
 		state->file = NULL;

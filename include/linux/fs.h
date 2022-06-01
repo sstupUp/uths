@@ -934,8 +934,8 @@ struct file {
 	 */
 
 	// Byoung
-	int has_pflag;		// does this file has a parent file?
-	int used_pflag; 	// has this file used a parent file?
+	int has_pflag;						// does this file has a parent file?
+	int used_pflag; 					// has this file used a parent file?
 	int f_number;		// device number
 	//////////
 
@@ -976,6 +976,10 @@ struct file_handle {
 
 static inline struct file *get_file(struct file *f)
 {
+	// Byoung
+	if((f->has_pflag == 1) || f->used_pflag)
+		printk("[get_file] increase f_count");
+	
 	atomic_long_inc(&f->f_count);
 	return f;
 }
