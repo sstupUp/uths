@@ -1267,6 +1267,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 			if(!strncmp(tmp->name, "/labb/labb1", 11) && (strlen(tmp->name) >= 12))
 			{
 				
+				printk(KERN_DEBUG "[do_sys_open] -------------- testing fio on %s --------------", tmp->name);
 				printk("[do_sys_open] -------------- uths open fd = %d --------------", fd);
 
 				struct open_flags op_p;
@@ -1294,11 +1295,11 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					struct inode * tmp = file_inode(f);
 					struct mount* mnt = real_mount(f->f_path.mnt);
 
-					printk("[do_sys_open] %s | original inode = 0x%08x, f_count = %d has = %d, used = %d", mnt->mnt_devname, tmp, f->f_count, f->has_pflag, f->used_pflag);
+					printk("[do_sys_open] %s | original inode = 0x%08x, f_count = %d has = %d, used = %d, flag = %o\n", mnt->mnt_devname, tmp, f->f_count, f->has_pflag, f->used_pflag, flags);
 
 					tmp = file_inode(p_f);
 					mnt = real_mount(p_f->f_path.mnt);
-					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag);
+					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d, flag = %o\n", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag, flags_p);
 					fsnotify_open(f);
 					fd_install(fd, f);
 
@@ -1311,7 +1312,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 			{
 				
 				// Byoung
-				if(!strncmp(tmp->name, "/dummy", 6))
+				if(!strncmp(tmp->name, "/dummy", 6) || !strncmp(tmp->name, "/dummy2", 6))
 				{
 					f->has_pflag = -2;
 					printk("[do_sys_open test] name = %s, f_count = %d, flags = %08o", tmp->name, f->f_count, flags);

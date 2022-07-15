@@ -173,6 +173,59 @@ static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
 static const char *panic_later, *panic_param;
 
+
+// Byoung
+// for profile module
+int module_flag;
+EXPORT_SYMBOL(module_flag);
+
+int func_len;
+EXPORT_SYMBOL(func_len);
+
+struct timespec local_time[2];
+EXPORT_SYMBOL(local_time);
+
+unsigned int uths_flag;
+EXPORT_SYMBOL(uths_flag);
+
+#define NAME_LEN 20
+#define ARR_SIZE 10
+typedef struct time_stamp {
+	unsigned int id;
+	char name[NAME_LEN];
+	unsigned long long tot_time;
+	unsigned long long tot_count;
+} TIME_STAMP;
+
+TIME_STAMP profile_arr[ARR_SIZE][2];
+EXPORT_SYMBOL(profile_arr);
+
+#define BILLION 1000000000
+inline void calclock(struct timespec * timevalue, unsigned long long *total_time, unsigned long long *total_count)
+{
+	unsigned long long timedelay = 0, temp = 0, temp_n = 0;
+	struct timespec *myclock = timevalue;
+
+	if(myclock[1].tv_nsec >= myclock[0].tv_nsec)
+	{
+		temp = myclock[1].tv_sec - myclock[0].tv_sec;
+		temp_n = myclock[1].tv_nsec - myclock[0].tv_nsec;
+		timedelay = BILLION * temp + temp_n;
+	}
+	else
+	{
+		temp = myclock[1].tv_sec - myclock[0].tv_sec - 1;
+		temp_n = BILLION + myclock[1].tv_nsec - myclock[0].tv_nsec;
+		timedelay = BILLION * temp + temp_n;
+	}
+
+	__sync_fetch_and_add(total_time, timedelay);
+	__sync_fetch_and_add(total_count, 1);
+}
+EXPORT_SYMBOL(calclock);
+
+////////////////////////////////////
+
 extern const struct obs_kernel_param __setup_start[], __setup_end[];
 
 static bool __init obsolete_checksetup(char *line)

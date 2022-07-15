@@ -27,6 +27,7 @@
 
 // Byoung
 #include "./mount.h"
+#include "../profile/profile.h"
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -451,7 +452,13 @@ ssize_t __vfs_read(struct file *file, char __user *buf, size_t count,
 	if (file->f_op->read)
 		return file->f_op->read(file, buf, count, pos);
 	else if (file->f_op->read_iter)
+	{
+		// Byoung
+		//ssize_t ret;
+		//Profile(2, 3, ret, new_sync_read, file, buf, count, pos);
+		//return ret;
 		return new_sync_read(file, buf, count, pos);
+	}
 	else
 		return -EINVAL;
 }
@@ -508,6 +515,8 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 	if (!ret) {
 		if (count > MAX_RW_COUNT)
 			count =  MAX_RW_COUNT;
+		
+		//Profile(2, 2, ret, __vfs_read, file, buf, count, pos);
 		ret = __vfs_read(file, buf, count, pos);
 
 		// Byoung
@@ -548,6 +557,12 @@ static ssize_t __vfs_write(struct file *file, const char __user *p,
 	if (file->f_op->write)
 		return file->f_op->write(file, p, count, pos);
 	else if (file->f_op->write_iter)
+	//{
+		// Byoung
+	//	ssize_t ret;
+	//	Profile(2, 3, ret, new_sync_write, file, p, count, pos);
+	//	return ret;
+	//}
 		return new_sync_write(file, p, count, pos);
 	else
 		return -EINVAL;
@@ -605,12 +620,20 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	if (unlikely(!access_ok(buf, count)))
 		return -EFAULT;
 
+	// Byoung
 	ret = rw_verify_area(WRITE, file, pos, count);
 	if (!ret) {
 		if (count > MAX_RW_COUNT)
 			count =  MAX_RW_COUNT;
 		file_start_write(file);
+		// Byoung
 		ret = __vfs_write(file, buf, count, pos);
+	 	// Profile(2, 2, ret, __vfs_write, file, buf, count, pos);
+		
+		// Byoung
+	//	if(file->has_pflag == 1)
+	//		printk("[vfs_write] ret of __vfs_write = %ld\n", ret); 
+
 		if (ret > 0) {
 			fsnotify_modify(file);
 			add_wchar(current, ret);
@@ -673,20 +696,15 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 
 //		printk("[ksys_read] count_p = %ld, count_new = %ld", count_p, count_new);
 
-		trace_printk("[ksys_read] enter parent vfs_read");
+		//Profile(0, 4, ret_p, vfs_read, f_p.file, buf, count_p, ppos_p);
 		ret_p = vfs_read(f_p.file, buf, count_p, ppos_p);
-		trace_printk("[ksys_read] done parent vfs_read");
 
-		trace_printk("[ksys_read] enter original vfs_read");
+		//Profile(1, 4, ret, vfs_read, f.file, buf+count_p, count_new, ppos);
 		ret = vfs_read(f.file, buf+count_p, count_new, ppos);
-		trace_printk("[ksys_read] done original vfs_read");
-
-	//	printk("[ksys_read] ret_p = %ld", ret_p);
-
+		
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
-		
 	//	printk("[ksys_read] ret = %ld", ret);
 
 		if(ret >= 0 && ppos){
@@ -706,11 +724,11 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 			ppos = &pos;
 		}
 
-		if(f.file->has_pflag == -2)
-			//printk("[ksys_read test] count = %d", atomic_long_read(&f.file->f_count));
-			trace_printk("[ksys_read] enter vfs_read()\n");
-
-		ret = vfs_read(f.file, buf, count, ppos);
+		//if(f.file->has_pflag == -2)
+		//{
+		//	Profile(1, 1, ret, vfs_read, f.file, buf, count, ppos);
+		//}else
+			ret = vfs_read(f.file, buf, count, ppos);
 		
 		if(f.file->has_pflag == -2)
 			trace_printk("[ksys_read] done vfs_read()\n");
@@ -750,7 +768,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	
 	if(f.file && (f.file->has_pflag == 1)) {
 	//	printk("[ksys_write] file && file_p");
-		
+	
 		loff_t pos, *ppos = file_ppos(f.file);
 		if(ppos) {
 			pos = *ppos;
@@ -760,11 +778,8 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 		f.file->used_pflag = 1;
 
 		struct fd f_p = fdget_pos(fd);
+
 		ssize_t ret_p = -EBADF;
-	
-		
-		//printk("[ksys_write] ret = %ld", ret);
-		
 	
 		loff_t pos_p, *ppos_p = file_ppos(f_p.file);
 		if(ppos_p){
@@ -777,7 +792,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 		size_t count_new = count - count_p;	// for the original
 
 	//	trace_printk("[ksys_write] hello");
-	//	printk("[ksys_write 1] count_p = %ld, count_new = %ld", count_p, count_new);
+	//	printk("[ksys_write] count_p = %ld, count_new = %ld", count_p, count_new);
 	//	printk("[ksys_write 2] buf = %08x", buf);
 		
 	//	struct mount* tmp = real_mount(f.file->f_path.mnt);
@@ -788,20 +803,17 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	//	tmp_i = file_inode(f_p.file);
 	//	printk("[ksys_write] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_security);
 	
-		trace_printk("[ksys_write] enter parent vfs_write");	
-		ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
-		trace_printk("[ksys_write] done parent vfs_write");
+		Profile(0, 1, ret_p, vfs_write, f_p.file, buf, count_p, ppos_p);
+	//	ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
 
-		trace_printk("[ksys_write] enter original vfs_write");
-		ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
-		trace_printk("[ksys_write] done original vfs_write");
-		
+		Profile(1, 1, ret, vfs_write, f.file, buf+count_p, count_new, ppos);	
+	//	ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
+
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
-	
-//		printk("[ksys_write] ret = %ld", ret);
-//		printk("[ksys_write] ret_p = %ld", ret_p);
+		//printk("[ksys_write] ret = %ld", ret);
+		//printk("[ksys_write] ret_p = %ld", ret_p);
 	
 		if(ret >= 0 && ppos){
 			f.file->f_pos = pos;
@@ -823,14 +835,15 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 
 		// Byoung
 		if(f.file->has_pflag == -2)
-			//printk("[ksys_write test] count = %d", atomic_long_read(&f.file->f_count));
-			trace_printk("[ksys_write] enter original vfs_write");
-		ret = vfs_write(f.file, buf, count, ppos);
+		{	Profile(1, 1, ret, vfs_write, f.file, buf, count, ppos);	
+		
+		}else	
+	       		ret = vfs_write(f.file, buf, count, ppos);
 	
 		// Byoung
-		if(f.file->has_pflag == -2)
+		//if(f.file->has_pflag == -2)
 			//printk("[ksys_write test] count = %d", atomic_long_read(&f.file->f_count));
-			trace_printk("[ksys_write] done original vfs_write");
+		//	trace_printk("[ksys_write] done original vfs_write");
 		if (ret >= 0 && ppos)
 			f.file->f_pos = pos;
 		fdput_pos(f);
@@ -845,7 +858,15 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		size_t, count)
 {
-	return ksys_write(fd, buf, count);
+	// Byoung
+	if(fd == 6)
+	{
+		ssize_t ret;
+		Profile(1, 1, ret, ksys_write, fd, buf, count);
+		return ret;
+	}
+	else
+		return ksys_write(fd, buf, count);
 }
 
 ssize_t ksys_pread64(unsigned int fd, char __user *buf, size_t count,
@@ -863,8 +884,8 @@ ssize_t ksys_pread64(unsigned int fd, char __user *buf, size_t count,
 		ret = -ESPIPE;
 		
 		// Byoung
-		if((f.file->has_pflag == 1))
-			printk("[ksys_pread64] new func");
+	//	if((f.file->has_pflag == 1))
+	//		printk("[ksys_pread64] new func");
 		//
 
 		if (f.file->f_mode & FMODE_PREAD)
