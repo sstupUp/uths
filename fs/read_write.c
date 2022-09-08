@@ -730,8 +730,8 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 		//}else
 			ret = vfs_read(f.file, buf, count, ppos);
 		
-		if(f.file->has_pflag == -2)
-			trace_printk("[ksys_read] done vfs_read()\n");
+		//if(f.file->has_pflag == -2)
+		//	trace_printk("[ksys_read] done vfs_read()\n");
 
 		if (ret >= 0 && ppos)
 			f.file->f_pos = pos;
@@ -803,11 +803,11 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	//	tmp_i = file_inode(f_p.file);
 	//	printk("[ksys_write] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_security);
 	
-		Profile(0, 1, ret_p, vfs_write, f_p.file, buf, count_p, ppos_p);
-	//	ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
+	//	Profile(0, 1, ret_p, vfs_write, f_p.file, buf, count_p, ppos_p);
+		ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
 
-		Profile(1, 1, ret, vfs_write, f.file, buf+count_p, count_new, ppos);	
-	//	ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
+	//	Profile(1, 1, ret, vfs_write, f.file, buf+count_p, count_new, ppos);	
+		ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
 
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
@@ -912,6 +912,7 @@ ssize_t ksys_pwrite64(unsigned int fd, const char __user *buf,
 		return -EINVAL;
 
 	f = fdget(fd);
+	
 	if (f.file) {
 		ret = -ESPIPE;
 
@@ -924,7 +925,6 @@ ssize_t ksys_pwrite64(unsigned int fd, const char __user *buf,
 			ret = vfs_write(f.file, buf, count, &pos);
 		fdput(f);
 	}
-
 	return ret;
 }
 

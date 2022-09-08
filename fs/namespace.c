@@ -1738,6 +1738,11 @@ int ksys_umount(char __user *name, int flags)
 		goto dput_and_out;
 
 	retval = do_umount(mnt, flags);
+
+	// Byoung
+	if(nr_uths)
+		--nr_uths;
+
 dput_and_out:
 	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
 	dput(path.dentry);
@@ -2762,9 +2767,12 @@ static int do_add_mount(struct mount *newmnt, struct path *path, int mnt_flags)
 	{
 	//	printk("[do_add_mount] MNT_UTHS flag & setting number field");
 		newmnt->number = parent->number + 1;
+		// Global var.
+		nr_uths = newmnt->number;
+		printk("[do_add_mount] nr_uths = %d, newmnt->number = %d\n", nr_uths, newmnt->number);
 	}
 	////////
-	
+
 	err = graft_tree(newmnt, parent, mp);
 
 unlock:

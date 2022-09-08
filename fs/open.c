@@ -1295,11 +1295,11 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					struct inode * tmp = file_inode(f);
 					struct mount* mnt = real_mount(f->f_path.mnt);
 
-					printk("[do_sys_open] %s | original inode = 0x%08x, f_count = %d has = %d, used = %d, flag = %o\n", mnt->mnt_devname, tmp, f->f_count, f->has_pflag, f->used_pflag, flags);
+					printk("[do_sys_open] %s | original inode = 0x%08x, f_count = %d has = %d, used = %d, flag = %o f_mode = %o\n", mnt->mnt_devname, tmp, f->f_count, f->has_pflag, f->used_pflag, flags, f->f_mode);
 
 					tmp = file_inode(p_f);
 					mnt = real_mount(p_f->f_path.mnt);
-					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d, flag = %o\n", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag, flags_p);
+					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d, flag = %o, f_mode = %o\n", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag, flags_p, p_f->f_mode);
 					fsnotify_open(f);
 					fd_install(fd, f);
 
@@ -1315,7 +1315,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 				if(!strncmp(tmp->name, "/dummy", 6) || !strncmp(tmp->name, "/dummy2", 6))
 				{
 					f->has_pflag = -2;
-					printk("[do_sys_open test] name = %s, f_count = %d, flags = %08o", tmp->name, f->f_count, flags);
+					printk("[do_sys_open test] name = %s, f_count = %d, flags = %08o, pid = %d\n", tmp->name, f->f_count, flags, current->pid);
 				}
 				//////
 

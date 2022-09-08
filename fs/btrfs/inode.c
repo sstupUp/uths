@@ -8563,6 +8563,9 @@ free_ordered:
 		 * Releases and cleans up our dio_bio, no need to bio_put()
 		 * nor bio_endio()/bio_io_error() against dio_bio.
 		 */
+
+		// Byoung
+		printk("[btrfs_submit_direct] calling dio_end_io()\n");
 		dio_end_io(dio_bio);
 	}
 	if (bio)

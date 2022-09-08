@@ -224,6 +224,9 @@ inline void calclock(struct timespec * timevalue, unsigned long long *total_time
 }
 EXPORT_SYMBOL(calclock);
 
+unsigned int nr_uths = 0;		/* number of device mounted under UTHS */
+EXPORT_SYMBOL(nr_uths);
+
 ////////////////////////////////////
 
 extern const struct obs_kernel_param __setup_start[], __setup_end[];

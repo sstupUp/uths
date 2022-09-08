@@ -328,6 +328,10 @@ static ssize_t dio_complete(struct dio *dio, ssize_t ret, unsigned int flags)
 
 		if (ret > 0 && dio->op == REQ_OP_WRITE)
 			ret = generic_write_sync(dio->iocb, ret);
+		
+		// Byoung
+	//	printk("[dio_complete] DIO_COMPLETE_ASYNC\n");
+
 		dio->iocb->ki_complete(dio->iocb, ret, 0);
 	}
 
@@ -353,6 +357,9 @@ static void dio_bio_end_aio(struct bio *bio)
 	unsigned long remaining;
 	unsigned long flags;
 	bool defer_completion = false;
+
+	// Byoung
+	//printk("[dio_bio_end_aio] dio_bio_end_aio\n");
 
 	/* cleanup the bio */
 	dio_bio_complete(dio, bio);
@@ -479,7 +486,11 @@ static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
 		sdio->submit_io(bio, dio->inode, sdio->logical_offset_in_bio);
 		dio->bio_cookie = BLK_QC_T_NONE;
 	} else
+	{
+		// Byoung
+	//	printk("[dio_bio_submit] calling submit_bio()\n");
 		dio->bio_cookie = submit_bio(bio);
+	}
 
 	sdio->bio = NULL;
 	sdio->boundary = 0;
@@ -893,7 +904,12 @@ out:
 	if (sdio->boundary) {
 		ret = dio_send_cur_page(dio, sdio, map_bh);
 		if (sdio->bio)
+		{	
+			// Byoung
+//			printk("[submit_page_section] calling dio_bio_submit()\n");
+			
 			dio_bio_submit(dio, sdio);
+		}
 		put_page(sdio->cur_page);
 		sdio->cur_page = NULL;
 	}
@@ -1086,6 +1102,10 @@ do_holes:
 
 			if (this_chunk_blocks == sdio->blocks_available)
 				sdio->boundary = buffer_boundary(map_bh);
+			
+			// Byoung
+		//	printk("[do_direct_IO] calling submit_page_section()\n");
+
 			ret = submit_page_section(dio, sdio, page,
 						  from,
 						  this_chunk_bytes,
@@ -1185,6 +1205,9 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	 * the early prefetch in the caller enough time.
 	 */
 
+	// Byoung
+//	printk("[do_blockdev_direct_IO] start\n");
+	
 	if (align & blocksize_mask) {
 		if (bdev)
 			blkbits = blksize_bits(bdev_logical_block_size(bdev));
@@ -1351,7 +1374,11 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 		sdio.cur_page = NULL;
 	}
 	if (sdio.bio)
+	{
+		// Byoung
+		//printk("[do_blockdev_direct_IO] calling dio_bio_submit()\n");
 		dio_bio_submit(dio, &sdio);
+	}
 
 	blk_finish_plug(&plug);
 
@@ -1384,6 +1411,9 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 		dio_await_completion(dio);
 
 	if (drop_refcount(dio) == 0) {
+		// Byoung
+	//	printk("[do_blockdev_direct_IO] calling dio_complete\n");
+
 		retval = dio_complete(dio, retval, DIO_COMPLETE_INVALIDATE);
 	} else
 		BUG_ON(retval != -EIOCBQUEUED);

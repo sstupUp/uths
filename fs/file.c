@@ -855,12 +855,12 @@ loop:
 		if (file->f_mode & mask)
 			file = NULL;
 		
-		if(file && (file->has_pflag==1) && file->used_pflag)
-		{
-//			printk("[__fget] hey");
-		}
-		else
-		{
+//		if(file && (file->has_pflag==1) && file->used_pflag)
+//		{
+//			printk("[__fget] getting parent file\n");
+//		}
+//		else
+//		{
 		       	if (!get_file_rcu_many(file, refs))
 			{
 			// Byoung
@@ -868,7 +868,7 @@ loop:
 			printk("[__fget] loop");
 			goto loop;
 			}
-		}
+//		}
 	}
 	
 	// Byoung

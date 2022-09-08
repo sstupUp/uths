@@ -1042,7 +1042,6 @@ blk_qc_t generic_make_request(struct bio *bio)
 		// Byoung
 	//	printk("[generic_make_request] device name %s", bio->bi_disk->disk_name);
 		
-		
 		struct request_queue *q = bio->bi_disk->queue;
 		blk_mq_req_flags_t flags = bio->bi_opf & REQ_NOWAIT ?
 			BLK_MQ_REQ_NOWAIT : 0;
