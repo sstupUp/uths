@@ -64,6 +64,14 @@ static ssize_t ext4_dax_read_iter(struct kiocb *iocb, struct iov_iter *to)
 
 static ssize_t ext4_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
+	// Byoung
+//	if(iocb == NULL)
+//		printk("[%s] hehehe fuck you\n", __func__);
+
+	// Byoung
+//	if(iocb->ki_filp->has_pflag || iocb->ki_filp->used_pflag)
+//		printk("[%s] ki_filp = %p, ki_filp->f_inode = %p\n", __func__, iocb->ki_filp, iocb->ki_filp->f_inode);
+
 	if (unlikely(ext4_forced_shutdown(EXT4_SB(file_inode(iocb->ki_filp)->i_sb))))
 		return -EIO;
 

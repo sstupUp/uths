@@ -50,6 +50,11 @@
 
 #include "internal.h"
 
+// Byoung
+// Profile header
+#include "../profile/profile.h"
+//
+
 #define KIOCB_KEY		0
 
 #define AIO_RING_MAGIC			0xa10a10a1
@@ -102,6 +107,8 @@ struct split_info {
 	/* 해당 request가 들어갈 tail의 위치 */
 	int tail;
 };
+
+///////
 
 struct kioctx {
 	struct percpu_ref	users;
@@ -182,7 +189,14 @@ struct kioctx {
 	unsigned nr_req; 		/* number of requests split */
 
 	struct split_info *split_arr;		/* index: aio_iocb / *idx: tail */
-	int split_arr_cursor;
+	int split_done;				/* Global count for finished requests */
+	int split_in;				/* number of requests in the ring*/
+	int split_idx;				/* Global index */
+	int tot;
+	int cursor;
+
+	spinlock_t split_lock;
+	
 	//
 
 	unsigned		id;
@@ -239,7 +253,7 @@ struct aio_kiocb {
 
 	// Byoung
 	unsigned int ki_idx; 		/* idx for split_arr in kioctx */
-	unsigned int ki_split;		/* indicates whether the request is split */
+	atomic_t ki_split;		/* indicates whether the request is split */
 };
 
 /*------ sysctl variables----*/
@@ -763,6 +777,9 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 	 */
 	unsigned int max_reqs = nr_events;
 
+	// Byoung
+	printk("[ioctx_alloc] start alloc\n");
+
 	/*
 	 * We keep track of the number of available ringbuffer slots, to prevent
 	 * overflow (reqs_available), and we also use percpu counters for this.
@@ -811,40 +828,53 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		goto err;
 
 	// Byoung
-	if(nr_uths != 2)
-		nr_uths = 0;
+	printk("[ioctx_alloc] nr_uths = %d\n", atomic_read(&nr_uths));
+//	if(nr_uths != 2)
+//		nr_uths = 0;
 
-	ctx->nr_req = nr_uths;
+//	ctx->nr_req = atomic_read(&nr_uths);
 	
-	if(nr_uths)
-	{
+//	if(ctx->nr_req)
+//	{
 //		atomic_long_add(1, ctx->reqs->ref->counts);
-//		printk("[ioctx_alloc] init ioctx\n");
+		ctx->nr_req = 0;
+		ctx->split_done = 0;
+		ctx->split_in = 0;
+		ctx->split_idx = 0;
+		ctx->tot = 0;
+		ctx->cursor = 0;
 
-		ctx->split_arr = kmalloc(sizeof(struct split_info) * (nr_uths + 1), GFP_KERNEL);
-		
-		int i;
-		for(i = 0; i < nr_uths + 1; ++i)
-		{
-			ctx->split_arr[i].tail = -1;
-			ctx->split_arr[i].done = 0;
-		}
-
-		ctx->split_arr_cursor = -1;
-	
+		spin_lock_init(&ctx->split_lock);	
 		atomic_set(&ctx->reqs_available, ctx->nr_events - 1);
-	}
-	else {
+//	}
+/*	else {
 		atomic_set(&ctx->reqs_available, ctx->nr_events - 1);
 		ctx->split_arr = NULL;
-		ctx->split_arr_cursor = -1;
+		ctx->split_done = -1;
+		ctx->split_in = -1;
+		ctx->split_idx = -1;
 	}
-//
-
+//////////////
+*/
 	err = aio_setup_ring(ctx, nr_events);
 	if (err < 0)
 		goto err;
+	printk("[ioctx_alloc] init ioctx\n");
 
+	// Byoung
+		// max_reqs == original nr_events
+		// +1 just in caces...
+	ctx->split_arr = kmalloc(sizeof(struct split_info) * (ctx->nr_events), GFP_KERNEL);
+	printk("[ioctx_alloc] done kmalloc\n");
+
+	int i;
+	for(i = 0; i < (ctx->nr_events); ++i)
+	{
+		ctx->split_arr[i].tail = -1;
+		ctx->split_arr[i].done = -1;
+	}
+	//////////
+	
 	ctx->req_batch = (ctx->nr_events - 1) / (num_possible_cpus() * 4);
 	if (ctx->req_batch < 1)
 		ctx->req_batch = 1;
@@ -1012,8 +1042,8 @@ static bool __get_reqs_available(struct kioctx *ctx)
 
 		do {
 			// Byoung
-		//	if(nr_uths)
-//				printk("[__get_reqs_available] in loop: kcup_aviail = %d, avail = %d, ctx->req_batch = %d\n", kcpu->reqs_available, avail, ctx->req_batch);
+	//		if(atomic_read(&nr_uths))
+	//			printk("[__get_reqs_available] in loop: kcup_aviail = %d, avail = %d, ctx->req_batch = %d\n", kcpu->reqs_available, avail, ctx->req_batch);
 
 			if (avail < ctx->req_batch)
 				goto out;
@@ -1064,14 +1094,21 @@ static void refill_reqs_available(struct kioctx *ctx, unsigned head,
 		completed = 0;
 
 	// Byoung
-//	if(nr_uths)
-//		printk("[refill_reqs_available] nr_events = %u, head = %u, tail = %u, events_in_ring = %u, completed = %u\n", ctx->nr_events, head, tail, events_in_ring, completed);
+	//if(atomic_read(&nr_uths))
+	//	printk("[refill_reqs_available] head = %u, tail = %u, events_in_ring = %u, completed = %u, split_done = %d\n", head, tail, events_in_ring, completed, ctx->split_done);
+
+	if(ctx->nr_req)
+	{
+		put_reqs_available(ctx, ctx->split_done);
+		return;
+	}
 
 	if (!completed)
 		return;
 
 	ctx->completed_events -= completed;
 	put_reqs_available(ctx, completed);
+	
 }
 
 /* user_refill_reqs_available
@@ -1204,6 +1241,8 @@ static void aio_complete(struct aio_kiocb *iocb)
 
 	// Byoung
 	int new = 1;
+	int ori = 0;
+	int split;
 	/*
 	 * Add a completion event to the ring buffer. Must be done holding
 	 * ctx->completion_lock to prevent other code from messing with the tail
@@ -1219,21 +1258,31 @@ static void aio_complete(struct aio_kiocb *iocb)
 //		printk("[aio_complete] tail = %ld\n", tail);
 
 	// Byoung
-	if(iocb->ki_split)
+	
+	split = atomic_read(&iocb->ki_split);
+
+	if(split)
 	{
+//		printk("[aio_complete] inside split\n");
+	//	mutex_lock(&ctx->split_lock);
 		int new_tail = ctx->split_arr[iocb->ki_idx].tail;
-
-//		if(nr_uths)
-		//	printk("[aio_complete] new_tail = %d, ki_idx = %u\n", new_tail, iocb->ki_idx);
-
-		ctx->split_arr_cursor = iocb->ki_idx;
+		struct split_info * tmp;
+		tmp = &ctx->split_arr[iocb->ki_idx];
+		//printk("[aio_complete] tail= %d, new_tail = %d, ki_idx = %u\n", tail, new_tail, iocb->ki_idx);
+		
+		// fetch and add
+		// atomic_inc(&ctx->split_arr[iocb->ki_idx].done);
 
 		/* the half of the request arrived */
 		if(new_tail == -1)
 		{
-//			printk("[aio_complete] first time access\n");
+	//		printk("[aio_complete] first time access\n");
 			new_tail = tail;
-			ctx->split_arr[iocb->ki_idx].tail = new_tail;
+
+			// compare and exchange
+	//		printk("[aio_complete] tmp->tail= %d, [0].tail = %d\n", tmp->tail, ctx->split_arr[0].tail);
+			cmpxchg(&(tmp->tail), -1, new_tail);
+			//atomic_set(&ctx->split_arr[iocb->ki_idx].tail, new_tail);
 		}
 		else
 			new = 0;
@@ -1242,31 +1291,43 @@ static void aio_complete(struct aio_kiocb *iocb)
 		ev_page = kmap_atomic(ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE]);
 		event = ev_page + pos % AIO_EVENTS_PER_PAGE;
 
+		// First request fragment
 		if(new) {
-//			printk("[aio_complete] new\n");
+	//		printk("[aio_complete] new\n");
 			*event = iocb->ki_res;
-			++ctx->split_arr[iocb->ki_idx].done;
+			ctx->split_in = (ctx->split_in + 1);
 		}
-		else
+		else	// rest request fragment
 		{
-//			printk("[aio_complete] accumulate results\n");
+	//		printk("[aio_complete] accumulate results: res = %d, new = %d\n", event->res, iocb->ki_res.res);
 			event->res += iocb->ki_res.res;
 			event->res2 += iocb->ki_res.res2;
-			++ctx->split_arr[iocb->ki_idx].done;
+			++ctx->split_in;
+			ctx->split_done = ctx->split_done + 1;
 		}
+
+		__sync_fetch_and_add(&(tmp->done), 1);
+
+	//	printk("[aio_complete] tail= %d, new_tail = %d, ki_idx = %u, done = %d\n", tail, new_tail, iocb->ki_idx, tmp->done);
+	//	mutex_unlock(&ctx->split_lock);
 	}
 	else
 	{
 		ev_page = kmap_atomic(ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE]);
 		event = ev_page + pos % AIO_EVENTS_PER_PAGE;
 
+		ori = 1;
+
 		*event = iocb->ki_res;
 	}
 
 	// Byoung
-	if(new)
+	if(new || ori)
+	{
+	//	printk("[aio_complete] increase tail\n");
 		if (++tail >= ctx->nr_events)
 			tail = 0;
+	}
 
 	kunmap_atomic(ev_page);
 	flush_dcache_page(ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE]);
@@ -1289,11 +1350,14 @@ static void aio_complete(struct aio_kiocb *iocb)
 	flush_dcache_page(ctx->ring_pages[0]);
 
 	// Byoung
-	if(!iocb->ki_split || !new)
+	if(!(atomic_read(&iocb->ki_split)) || !new)
 		ctx->completed_events++;
 	
-	if (ctx->completed_events > 1)
+	if (ctx->completed_events > 1 && ori)
 		refill_reqs_available(ctx, head, tail);
+	else if(!new)
+		refill_reqs_available(ctx, head, tail);
+
 	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 
 	pr_debug("added to ring %p at [%u]\n", iocb, tail);
@@ -1318,7 +1382,11 @@ static void aio_complete(struct aio_kiocb *iocb)
 //	printk("[aio_complete] done\n");
 
 	if (waitqueue_active(&ctx->wait))
+	{
+		// Byoung
+//		printk("[aio_complete] waking up\n");
 		wake_up(&ctx->wait);
+	}
 }
 
 static inline void iocb_put(struct aio_kiocb *iocb)
@@ -1386,49 +1454,148 @@ static long aio_read_events_ring(struct kioctx *ctx,
 	// Byoung
 	/* check if all the split requests are merged */
 
-	if(ctx->nr_req && (ctx->nr_req != ctx->split_arr[ctx->split_arr_cursor].done))
+	if(ctx->nr_req && ctx->split_done == 0)
+	{
+//		printk("[aio_read_events_ring] no request merged: out\n");
 		goto out;
+	}
 //	if(nr_uths)
 //		printk("[aio_read_events_ring] ctx->nr_req = %d, ctx->split_arr.done = %d\n", ctx->nr_req, ctx->split_arr[ctx->split_arr_cursor].done);
 	
 	// Byoung
 	// Create a buffer to hold the head & tail value
 
-	while (ret < nr) {
-		long avail;
-		struct io_event *ev;
-		struct page *page;
+	/* 
+	 * Send the 'done' requests from the ring buffer one-by-one
+	 * using for loop
+	 */
 
-		avail = (head <= tail ?  tail : ctx->nr_events) - head;
-
-		// Byoung
-//		if(nr_uths)
-//			printk("[aio_read_events_ring] avail = %u\n", avail);
+	if(!ctx->nr_req) 
+		while (ret < nr) {
+			long avail;
+			struct io_event *ev;
+			struct page *page;
 	
-		if (head == tail)
-			break;
+			avail = (head <= tail ?  tail : ctx->nr_events) - head;
+	
+			// Byoung
+//			if(nr_uths)
+			//printk("[aio_read_events_ring] avail = %u\n", avail);
+		
+			if (head == tail)
+				break;
+	
+			pos = head + AIO_EVENTS_OFFSET;
+			page = ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE];
+			
+			// Byoung
+		//	printk("[aio_read_events_ring] EVENTS_PER_PAGE = %d, EVENTS_OFFSET = %d\n", AIO_EVENTS_PER_PAGE, AIO_EVENTS_OFFSET);
+		//	printk("[aio_read_events_ring] pos = %u, pos%% = %u\n", pos, pos%AIO_EVENTS_PER_PAGE);
+			pos %= AIO_EVENTS_PER_PAGE;
+		
+			// 'nr' from the argument
+			avail = min(avail, nr - ret);
+			avail = min_t(long, avail, AIO_EVENTS_PER_PAGE - pos);
+	
+			ev = kmap(page);
+			copy_ret = copy_to_user(event + ret, ev + pos,
+			sizeof(*ev) * avail);
+			kunmap(page);
 
-		pos = head + AIO_EVENTS_OFFSET;
-		page = ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE];
-		pos %= AIO_EVENTS_PER_PAGE;
+			if (unlikely(copy_ret)) {
+				ret = -EFAULT;
+				goto out;
+			}
 
-		// 'nr' from the argument
-		avail = min(avail, nr - ret);
-		avail = min_t(long, avail, AIO_EVENTS_PER_PAGE - pos);
+			ret += avail;
+			head += avail;
+			head %= ctx->nr_events;
+		}
+	// Byoung
+	else {
+	//	printk("[aio_read_events_ring] CPU = %d\n", current->cpu);
+		int count = 0;
+		int i = 0;
+		int max_rq = ctx->nr_events;
+		unsigned long flags;
+		
+		while(ret < nr) {
+			long avail;
+			struct io_event *ev;
+			struct page *page;
+			struct split_info *tmp;
+			int old_i = ctx->split_idx;
 
-		ev = kmap(page);
-		copy_ret = copy_to_user(event + ret, ev + pos,
-					sizeof(*ev) * avail);
-		kunmap(page);
+			i = old_i;
+			ctx->completed_events -= ctx->split_done;
+			++count;	
+//			printk("[aio_read_events_ring] while loop: split_done = %d split_in = %d\n", ctx->split_done, ctx->split_in);
 
-		if (unlikely(copy_ret)) {
-			ret = -EFAULT;
-			goto out;
+	//		mutex_lock(&ctx->split_lock);
+
+			while(1)
+			{
+				tmp = &ctx->split_arr[i];
+				if(tmp->done == 2)
+				{
+					printk("[aio_read_events_ring] copy_to_user i = %d, tail = %d\n", i, tmp->tail);
+
+					pos = tmp->tail + AIO_EVENTS_OFFSET;
+					page = ctx->ring_pages[pos / AIO_EVENTS_PER_PAGE];
+					pos %= AIO_EVENTS_PER_PAGE;
+
+					ev = kmap(page);
+					printk("[aio_read_events_ring] copy to user: res = %ld\n", (ev+pos)->res);
+					copy_ret = copy_to_user(event + ret, ev + pos, sizeof(*ev));
+					kunmap(page);
+
+					if(unlikely(copy_ret))
+					{
+						ret = -EFAULT;
+						goto out;
+					}
+				
+					spin_lock_irqsave(&ctx->split_lock, flags);
+					__sync_fetch_and_or(&(tmp->done), 0xffffffff);	
+					__sync_fetch_and_or(&(tmp->tail), 0xffffffff);
+				//	atomic_set(&ctx->split_arr[i].done, -1);
+				//	atomic_set(&ctx->split_arr[i].tail, -1);
+					spin_unlock_irqrestore(&ctx->split_lock, flags);
+					++ret;
+					--ctx->split_done;
+					ctx->split_in -= 2;
+					printk("[aio_read_events_ring] changed done = %d, tail = %d\n", tmp->done, tmp->tail);
+					head += 1;
+					head %= ctx->nr_events;
+				}
+				
+				if(ret == nr)
+				{
+//					printk("[aio_read_events_ring] break from for loop: i = %d\n", i);
+					break;
+				}
+
+				i = (i+1)%(ctx->nr_events);
+				if(i == old_i)
+					break;
+			}	
+			
+	//		mutex_unlock(&ctx->split_lock);
+
+	//		if(count %1000 ==0)
+	//			printk("[aio_read_events_ring] while loop: %d\n", count * 10);
+
+//			printk("[aio_read_events_ring] end copy: ret = %d, nr = %d, i = %d\n", ret, nr, i);
 		}
 
-		ret += avail;
-		head += avail;
-		head %= ctx->nr_events;
+		ctx->tot += ret;
+
+//		printk("[aio_read_events_ring] out while loop: split_done = %d split_in = %d\n", ctx->split_done, ctx->split_in);
+	//	if(ret % (2<<10) == 0)
+	//		printk("[aio_read_events_ring] checkpoint\n");
+
+//		printk("[aio_read_events_ring] tot = %d\n", ctx->tot);
+		ctx->cursor = i;
 	}
 
 	// Byoung
@@ -1440,15 +1607,7 @@ static long aio_read_events_ring(struct kioctx *ctx,
 	flush_dcache_page(ctx->ring_pages[0]);
 
 	// Byoung
-	// Reset ctx->nr_done
-	
-	if(ctx->nr_req)
-	{
-		ctx->split_arr[ctx->split_arr_cursor].tail = -1;
-		ctx->split_arr[ctx->split_arr_cursor].done = 0;
-	}
-	// Byoung
-//	if(nr_uths)
+//	if(atomic_read(&nr_uths))
 //		printk("[aio_read_events_ring] done\n");
 
 	pr_debug("%li  h%u t%u\n", ret, head, tail);
@@ -1456,7 +1615,7 @@ out:
 	mutex_unlock(&ctx->ring_lock);
 
 	// Byoung
-//	if(nr_uths)
+//	if(atomic_read(&nr_uths))
 //		printk("[aio_read_events_ring] out\n");
 
 	return ret;
@@ -1546,6 +1705,8 @@ SYSCALL_DEFINE2(io_setup, unsigned, nr_events, aio_context_t __user *, ctxp)
 //		printk("[io_setup] arg: nr_events = %u\n", nr_events);
 //	}
 
+	printk("[io_setup] arg: nr_events = %u\n", nr_events);
+	
 	ret = get_user(ctx, ctxp);
 	if (unlikely(ret))
 		goto out;
@@ -1619,8 +1780,8 @@ out:
 SYSCALL_DEFINE1(io_destroy, aio_context_t, ctx)
 {
 	// Byoung
-//	if(nr_uths)
-//		printk("[io_destroy] pid: %u io_destroy\n", current->pid);
+	if(atomic_read(&nr_uths))
+		printk("[io_destroy] io_destroy\n");
 
 	struct kioctx *ioctx = lookup_ioctx(ctx);
 	if (likely(NULL != ioctx)) {
@@ -2068,11 +2229,13 @@ static int __io_submit_one(struct kioctx *ctx, struct iocb *iocb,
 			   bool compat)
 {
 	// Byoung
-	int flag;
+	unsigned int flag;
 	struct aio_kiocb* req_p; 
 	__s64 tmp_offset;
 	struct iocb iocb_p = *iocb;
 	static int ret = 0;
+	int dum_idx = 0;
+	int dum_reqs = 0;
 	//
 	
 	req->ki_filp = fget(iocb->aio_fildes);
@@ -2082,11 +2245,14 @@ static int __io_submit_one(struct kioctx *ctx, struct iocb *iocb,
 	// Byoung
 	flag = req->ki_filp->has_pflag == 1 ? 1 : 0;
 
+	if(flag)
+		ctx->nr_req = atomic_read(&nr_uths);
+
 	// Byoung
 	// 특정 directory에서 열면 parent file도 동일한 descriptor로 접근 가능
 	if(flag)
 	{
-	//	printk("[__io_submit_one] hello\n");
+	//	printk("[__io_submit_one] CPU = %d\n", current->cpu);
 	
 		/*
 		 * Based on aio_get_req()
@@ -2103,15 +2269,28 @@ static int __io_submit_one(struct kioctx *ctx, struct iocb *iocb,
 		req->ki_filp->used_pflag = 1;
 		req_p->ki_filp = fget(iocb->aio_fildes);
 		
-		req->ki_split = 1;
-		req_p->ki_split = 1;
+		atomic_set(&req->ki_split, 1);
+		atomic_set(&req_p->ki_split, 1);
 
-		ctx->split_arr_cursor = (ctx->split_arr_cursor + 1)%(nr_uths+1);
-		req->ki_idx = req_p->ki_idx = ctx->split_arr_cursor;
+		dum_idx = ctx->split_idx;
+		dum_reqs = ctx->nr_events;
+		
+		while(ctx->split_arr[dum_idx].done >= 0)
+			if(++dum_idx > dum_reqs)
+				dum_idx = 0;
+
+		// fetch and add
+		__sync_fetch_and_add(&(ctx->split_arr[dum_idx].done), 1);
+		printk("[__io_submit_one] ki_idx = %d, done = %d\n", dum_idx, ctx->split_arr[dum_idx].done);
+		ctx->split_idx = (dum_idx + 1) % dum_reqs;
+		req->ki_idx = req_p->ki_idx = dum_idx;
+	//	printk("[__io_submit_one] done\n");
 	}
 	else
+	{
 		ctx->nr_req = 0;
-
+		atomic_set(&req->ki_split, 0);
+	}
 	if (iocb->aio_flags & IOCB_FLAG_RESFD) {
 		struct eventfd_ctx *eventfd;
 		/*
@@ -2153,6 +2332,8 @@ static int __io_submit_one(struct kioctx *ctx, struct iocb *iocb,
 		
 		tmp_offset = iocb->aio_nbytes;
 
+//		printk("[__io_submit_one] nbytes = %d, nbytes_p = %d\n", iocb->aio_nbytes, iocb_p.aio_nbytes);
+
 		iocb->aio_buf = iocb->aio_buf + tmp_offset/2;
 		iocb->aio_nbytes /= 2;
 
@@ -2164,16 +2345,28 @@ static int __io_submit_one(struct kioctx *ctx, struct iocb *iocb,
 
 	switch (iocb->aio_lio_opcode) {
 	case IOCB_CMD_PREAD:
-		return aio_read(&req->rw, iocb, false, compat);
+		// Byoung
+		if(flag)
+		{
+	//		printk("[__io_submit_one] one more read\n");
+			ret = aio_read(&req_p->rw, &iocb_p, false, compat);
+			iocb_put(req_p);
+		}
+		ret += aio_read(&req->rw, iocb, false, compat);
+		return ret;
 	case IOCB_CMD_PWRITE:
 		// Byoung
 		if(flag)
 		{
+	//		printk("[__io_submit_one] one more write\n");
 			ret = aio_write(&req_p->rw, &iocb_p, false, compat);
+		//	printk("[__io_submit_one] ret1 = %d\n" ,ret);
 			iocb_put(req_p);
 		}
 		//
 		ret += aio_write(&req->rw, iocb, false, compat);
+		//if(flag)
+		//	printk("[__io_submit_one] ret2 = %d\n", ret);
 		return ret;
 	case IOCB_CMD_PREADV:
 		return aio_read(&req->rw, iocb, true, compat);
@@ -2294,6 +2487,8 @@ SYSCALL_DEFINE3(io_submit, aio_context_t, ctx_id, long, nr,
 			break;
 		}
 
+		// Byoung
+		//Profile(0, ret, io_submit_one, ctx, user_iocb, false);
 		ret = io_submit_one(ctx, user_iocb, false);
 		if (ret)
 			break;
@@ -2422,12 +2617,16 @@ static long do_io_getevents(aio_context_t ctx_id,
 		if (likely(min_nr <= nr && min_nr >= 0))
 		{
 			// Byoung
-//			printk("[do_io_getevents] completed_events = %u\n", ioctx->completed_events);
+			//printk("[do_io_getevents] completed_events = %u\n", ioctx->completed_events);
+			//Profile(1, ret, read_events, ioctx, min_nr, nr, events, until);
 			ret = read_events(ioctx, min_nr, nr, events, until);
+			//printk("[do_io_getevents] min_nr = %d, nr = %d, ret from read_events = %d\n", min_nr, nr, ret);
 		}
 		percpu_ref_put(&ioctx->users);
 	}
 
+//	if(atomic_read(&nr_uths))
+//		printk("[do_io_getevents] total return = %d\n", ioctx->tot);
 	return ret;
 }
 
@@ -2465,7 +2664,8 @@ SYSCALL_DEFINE5(io_getevents, aio_context_t, ctx_id,
 		ret = -EINTR;
 
 	// Byoung
-//	printk("[io_getevents] pid: %u done\n", current->pid);
+//	if(atomic_read(&nr_uths))
+//		printk("[io_getevents] ret: %u done\n", ret);
 
 	return ret;
 }

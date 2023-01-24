@@ -970,8 +970,8 @@ static void io_file_put(struct io_submit_state *state)
 		int diff = state->has_refs - state->used_refs;
 
 		// Byoung
-		if(state->file->has_pflag || state->file->used_pflag)
-			printk("[io_file_put] new funciton");
+	//	if(state->file->has_pflag || state->file->used_pflag)
+	//		printk("[io_file_put] new funciton");
 
 		if (diff)
 			fput_many(state->file, diff);
@@ -1283,8 +1283,8 @@ static int io_read(struct io_kiocb *req, const struct sqe_submit *s,
 		return -EINVAL;
 
 	// Byoung
-	if(file->has_pflag || file->used_pflag)
-		printk("[io_read] has_pflag = %d, used_pflag = %d", file->has_pflag, file->used_pflag); 
+	//if(file->has_pflag || file->used_pflag)
+	//	printk("[io_read] has_pflag = %d, used_pflag = %d", file->has_pflag, file->used_pflag); 
 
 	ret = io_import_iovec(req->ctx, READ, s, &iovec, &iter);
 	if (ret < 0)
@@ -3241,6 +3241,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	int submitted = 0;
 	struct fd f;
 
+	// 아래 두 flag를 사용할 때는 다른 flag 켜져 있으면 Error
 	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP))
 		return -EINVAL;
 
@@ -3474,6 +3475,9 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 
 	if (copy_from_user(&p, params, sizeof(p)))
 		return -EFAULT;
+	
+	// parameter의 resv field가 0으로 초기화 되어있는지 확인
+	// 
 	for (i = 0; i < ARRAY_SIZE(p.resv); i++) {
 		if (p.resv[i])
 			return -EINVAL;

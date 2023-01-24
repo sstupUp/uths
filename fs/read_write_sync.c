@@ -29,10 +29,6 @@
 #include "./mount.h"
 #include "../profile/profile.h"
 
-// Byoung
-unsigned int return_cnt;
-wait_queue_head_t my_wait;
-
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
 	.read_iter	= generic_file_read_iter,
@@ -326,8 +322,6 @@ off_t ksys_lseek(unsigned int fd, off_t offset, unsigned int whence)
 		struct fd f_p = fdget_pos(fd);
 		if(!f_p.file)
 			return -EBADF;
-		
-		printk("[%s] offset = %d\n", __func__, offset);
 
 		if (whence <= SEEK_MAX)	{
 			loff_t res_p = vfs_llseek(f_p.file, offset, whence);
@@ -402,11 +396,6 @@ int rw_verify_area(int read_write, struct file *file, const loff_t *ppos, size_t
 	struct inode *inode;
 	int retval = -EINVAL;
 
-	int flag = 0;
-	// Byoung
-	if(file->has_pflag || file->used_pflag)
-		flag = 1;
-
 	inode = file_inode(file);
 	if (unlikely((ssize_t) count < 0))
 		return retval;
@@ -419,41 +408,22 @@ int rw_verify_area(int read_write, struct file *file, const loff_t *ppos, size_t
 		loff_t pos = *ppos;
 
 		if (unlikely(pos < 0)) {
-			// Byoung
-			if(flag)
-				printk("[%s] pos < 0: retval = %d\n", __func__, retval); 
 			if (!unsigned_offsets(file))
 				return retval;
 			if (count >= -pos) /* both values are in 0..LLONG_MAX */
-			{
-				// Byoung
-				if(flag)
-					printk("[%s] count >= -pos: retval = %d\n", __func__, retval); 
 				return -EOVERFLOW;
-			}
 		} else if (unlikely((loff_t) (pos + count) < 0)) {
-			// Byoung
-			if(flag)
-				printk("[%s] pos + count < 0: retval = %d\n", __func__, retval); 
 			if (!unsigned_offsets(file))
 				return retval;
 		}
 
 		if (unlikely(inode->i_flctx && mandatory_lock(inode))) {
-			// Byoung
-			if(flag)
-				printk("[%s] mandatory_loc: retval = %d\n", __func__, retval); 
-			
 			retval = locks_mandatory_area(inode, file, pos, pos + count - 1,
 					read_write == READ ? F_RDLCK : F_WRLCK);
 			if (retval < 0)
 				return retval;
 		}
 	}
-	
-	// Byoung
-//	if(flag)
-//		printk("[%s] retval = %d, ppos = %p, pos = %d\n", __func__, retval, ppos, *ppos);
 
 	return security_file_permission(file,
 				read_write == READ ? MAY_READ : MAY_WRITE);
@@ -465,67 +435,33 @@ static ssize_t new_sync_read(struct file *filp, char __user *buf, size_t len, lo
 	struct kiocb kiocb;
 	struct iov_iter iter;
 	ssize_t ret;
-	
-	// Byoung
-	if(filp->f_number == -1) {
-		filp->f_iovec->iov_base = buf;
-		filp->f_iovec->iov_len = len;
 
-		init_sync_kiocb(filp->f_kiocb, filp);
-		filp->f_kiocb->ki_pos = (ppos ? *ppos : 0);
-		iov_iter_init(filp->f_iter, READ, filp->f_iovec, 1, len);
+	init_sync_kiocb(&kiocb, filp);
+	kiocb.ki_pos = (ppos ? *ppos : 0);
+	iov_iter_init(&iter, READ, &iov, 1, len);
 
-		ret = call_read_iter(filp, filp->f_kiocb, filp->f_iter);
-	}
-	else {
-		init_sync_kiocb(&kiocb, filp);
-		kiocb.ki_pos = (ppos ? *ppos : 0);
-		iov_iter_init(&iter, READ, &iov, 1, len);
-
-		ret = call_read_iter(filp, &kiocb, &iter);
-	
-		BUG_ON(ret == -EIOCBQUEUED);
-
-		if (ppos)
-			*ppos = kiocb.ki_pos;
-	}
-
+	ret = call_read_iter(filp, &kiocb, &iter);
+	BUG_ON(ret == -EIOCBQUEUED);
+	if (ppos)
+		*ppos = kiocb.ki_pos;
 	return ret;
 }
 
 ssize_t __vfs_read(struct file *file, char __user *buf, size_t count,
 		   loff_t *pos)
 {
-	// Byoung
-	int flag = 0;
-	ssize_t ret;
-
-	if(file->f_number == -1)
-		flag = 1;
-
-	if (file->f_op->read) {
-		ret = file->f_op->read(file, buf, count, pos);
-		
-//		if(flag == 1) // Byoung
-//			printk("[%s] f_op->read() = %lld\n", __func__, ret);
-		return ret;
-	} 
-	else if (file->f_op->read_iter) {
+	if (file->f_op->read)
+		return file->f_op->read(file, buf, count, pos);
+	else if (file->f_op->read_iter)
+	{
 		// Byoung
 		//ssize_t ret;
 		//Profile(2, 3, ret, new_sync_read, file, buf, count, pos);
 		//return ret;
-		ret = new_sync_read(file, buf, count, pos);
-
-//		if(flag == 1) // Byoung
-//			printk("[%s] new_sync_read() = %lld\n", __func__, ret);
-		return ret;
+		return new_sync_read(file, buf, count, pos);
 	}
-	else {
-//		if(flag == 1) // Byoung
-//			printk("[%s] error -EINVAL = %d\n", __func__, -EINVAL);
+	else
 		return -EINVAL;
-	}
 }
 
 ssize_t kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
@@ -574,8 +510,8 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 	ret = rw_verify_area(READ, file, pos, count);
 	
 	// Byoung
-//	if(file->has_pflag || file->used_pflag)
-//		printk("[vfs_read] after rw_verify ret = %ld", ret);
+//	if(file->has_pflag)
+//		printk("[vfs_read] after rw_verify ret= %ld", ret);
 	
 	if (!ret) {
 		if (count > MAX_RW_COUNT)
@@ -585,7 +521,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 		ret = __vfs_read(file, buf, count, pos);
 
 		// Byoung
-//		if(file->has_pflag || file->used_pflag)
+//		if(file->has_pflag)
 //			printk("[vfs_read] after __vfs_read ret = %ld", ret);
 
 		if (ret > 0) {
@@ -604,64 +540,33 @@ static ssize_t new_sync_write(struct file *filp, const char __user *buf, size_t 
 	struct kiocb kiocb;
 	struct iov_iter iter;
 	ssize_t ret;
-	
-	// Byoung
-	if((filp->has_pflag || filp->used_pflag) && !filp->f_trunc) {
-		filp->f_iovec->iov_base = buf;
-		filp->f_iovec->iov_len = len;
-		
-		init_sync_kiocb(filp->f_kiocb, filp);
-		filp->f_kiocb->ki_pos = (ppos ? *ppos : 0);
-		iov_iter_init(filp->f_iter, WRITE, filp->f_iovec, 1, len);
-		
-		__sb_writers_release(file_inode(filp)->i_sb, SB_FREEZE_WRITE);
-		
-		filp->f_kiocb->ki_flags |= IOCB_WRITE;
 
-		ret = call_write_iter(filp, filp->f_kiocb, filp->f_iter);
-	}
-	else {
-		init_sync_kiocb(&kiocb, filp);
-		kiocb.ki_pos = (ppos ? *ppos : 0);
-		iov_iter_init(&iter, WRITE, &iov, 1, len);
+	init_sync_kiocb(&kiocb, filp);
+	kiocb.ki_pos = (ppos ? *ppos : 0);
+	iov_iter_init(&iter, WRITE, &iov, 1, len);
 
-		ret = call_write_iter(filp, &kiocb, &iter);
-		BUG_ON(ret == -EIOCBQUEUED);
-		if (ret > 0 && ppos)
-			*ppos = kiocb.ki_pos;
-	}
+	ret = call_write_iter(filp, &kiocb, &iter);
+	BUG_ON(ret == -EIOCBQUEUED);
+	if (ret > 0 && ppos)
+		*ppos = kiocb.ki_pos;
 	return ret;
 }
 
 static ssize_t __vfs_write(struct file *file, const char __user *p,
 			   size_t count, loff_t *pos)
 {
-	// Byoung
-	int flag;
-	ssize_t ret;
-	// Byoung
-	if(file->has_pflag || file->used_pflag)
-		flag = 1;
-
-	if (file->f_op->write) { 
-		ret = file->f_op->write(file, p, count, pos);
-//		if(flag)
-//			printk("[%s] f_op->write() = %ld\n", __func__, ret);
-		return ret;
-	} else if (file->f_op->write_iter) {
+	if (file->f_op->write)
+		return file->f_op->write(file, p, count, pos);
+	else if (file->f_op->write_iter)
+	//{
 		// Byoung
 	//	ssize_t ret;
 	//	Profile(2, 3, ret, new_sync_write, file, p, count, pos);
 	//	return ret;
-	
-		ret= new_sync_write(file, p, count, pos);
-//		if(flag)
-//			printk("[%s] new_sync_write() = %ld\n", __func__, ret);
-		return ret;
-	} else {
-//		printk("[%s] error EINVAL = %d\n", -EINVAL);
+	//}
+		return new_sync_write(file, p, count, pos);
+	else
 		return -EINVAL;
-	}
 }
 
 ssize_t __kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
@@ -705,15 +610,6 @@ ssize_t kernel_write(struct file *file, const void *buf, size_t count,
 }
 EXPORT_SYMBOL(kernel_write);
 
-// Byoung
-int ssd1 = 3;
-int ssd2 = 5;
-
-EXPORT_SYMBOL(ssd1);
-EXPORT_SYMBOL(ssd2);
-/////
-
-
 ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
 	ssize_t ret;
@@ -736,17 +632,15 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	 	// Profile(2, 2, ret, __vfs_write, file, buf, count, pos);
 		
 		// Byoung
-		//if(file->has_pflag || file->used_pflag)
-		//	printk("[vfs_write] ret of __vfs_write = %ld\n", ret); 
+	//	if(file->has_pflag == 1)
+	//		printk("[vfs_write] ret of __vfs_write = %ld\n", ret); 
 
-		if ((ret > 0) || (file->has_pflag) || file->used_pflag) {
+		if (ret > 0) {
 			fsnotify_modify(file);
 			add_wchar(current, ret);
 		}
 		inc_syscw(current);
-		
-		if(!(file->has_pflag || file->used_pflag))
-			file_end_write(file);
+		file_end_write(file);
 	}
 
 	return ret;
@@ -758,34 +652,17 @@ static inline loff_t *file_ppos(struct file *file)
 	return file->f_mode & FMODE_STREAM ? NULL : &file->f_pos;
 }
 
-// Byoung
-int call_cnt;
-
-int get_return_cnt(void)
-{
-//	printk(KERN_DEBUG "[%s] call_cnt = %d, return_cnt = %d\n", __func__, ++call_cnt, return_cnt);
-	return return_cnt;
-}
-
-///////////////
-
 ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 {
 	struct fd f = fdget_pos(fd);
 	ssize_t ret = -EBADF;
-	int wait_result = 1;
-
+	
 //	printk("[ksys_read] read call");
 
 	// Byoung
 	if(f.file && (f.file->has_pflag == 1)) {
 //		printk("[ksys_read] file && file_p");
-
-		init_waitqueue_head(&(my_wait));
-		call_cnt = 0;
-
-		return_cnt = 0;
-
+		
 		loff_t pos, *ppos = file_ppos(f.file);
 		if(ppos) {
 			pos = *ppos;
@@ -804,54 +681,28 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 		}
 		
 		// spliting 'count' argument
-		size_t count_p = (count/(ssd1+ssd2)) * ssd1;	// for the parent
-	
-		if(ssd1 != ssd2)
-			while(count_p % 4096 != 0)
-				++count_p;
-
+		size_t count_p = count/2;	// for the parent
 		size_t count_new = count-count_p;	// for the original
-/*	
+	/*
 		// Checking addr.	
 		struct mount* tmp = real_mount(f.file->f_path.mnt);
 		struct inode* tmp_i = file_inode(f.file);
-		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, f_inode = 0x%p", tmp->mnt_devname, f.file->has_pflag, f.file->used_pflag, tmp_i, f.file->f_inode);
+		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, f_count = %d", tmp->mnt_devname, f.file->has_pflag, f.file->used_pflag, tmp_i, atomic_long_read(&(f.file->f_count)));
 		
 		tmp = real_mount(f_p.file->f_path.mnt);
 		tmp_i = file_inode(f_p.file);
-		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, f_inode = 0x%p", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_inode);
+		printk("[ksys_read] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, f_count = %d", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, atomic_long_read(&(f_p.file->f_count)));
 		//
-
 */
-	//	printk("[ksys_read] count = %ld, count_p = %ld, count_new = %ld, sum = %d", count, count_p, count_new, (count == count_p + count_new)?1:0);
-	
-		f_p.file->f_number = -1;
-		f.file->f_number = -1;
-	
-//		f_p.file->f_kiocb->ki_complete = my_complete;
-//		f.file->f_kiocb->ki_complete = my_complete;
+
+//		printk("[ksys_read] count_p = %ld, count_new = %ld", count_p, count_new);
+
 		//Profile(0, 4, ret_p, vfs_read, f_p.file, buf, count_p, ppos_p);
 		ret_p = vfs_read(f_p.file, buf, count_p, ppos_p);
 
 		//Profile(1, 4, ret, vfs_read, f.file, buf+count_p, count_new, ppos);
 		ret = vfs_read(f.file, buf+count_p, count_new, ppos);
-	
-	//	while(wait_result)
-	//	{
-//			printk("[ksys_read] wait_result = %d\n", wait_result);
-		if(get_return_cnt() != 2)	
-			wait_result = wait_event_interruptible_hrtimeout(my_wait, (get_return_cnt() == 2), -1);
-	//	}
-
-	//	printk(KERN_DEBUG "[%s] ret_p = %d, ret = %d, wait_result = %d\n", __func__, ret_p, ret, wait_result);
-		ret_p = f_p.file->f_res;
-		ret = f.file->f_res;
-
-	//	printk(KERN_DEBUG "[%s] f_p_res = %d, f_res = %d, wait_result = %d\n", __func__, ret_p, ret, wait_result);
-		// async로 던지니까 연산 끝나고 할당 해줌 <- 원래는 new_sync_read()에서 할당
-		*ppos_p = f_p.file->f_kiocb->ki_pos;
-		*ppos = f.file->f_kiocb->ki_pos;
-
+		
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
@@ -878,7 +729,6 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 		//{
 		//	Profile(1, 1, ret, vfs_read, f.file, buf, count, ppos);
 		//}else
-			f.file->f_number = 0;
 			ret = vfs_read(f.file, buf, count, ppos);
 		
 		//if(f.file->has_pflag == -2)
@@ -913,18 +763,13 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	struct fd f = fdget_pos(fd);
 	// Byung
 	ssize_t ret = -EBADF;
-	int wait_result = 1;
-
+		
 	// Byoung
 	// file && file_p
 	
 	if(f.file && (f.file->has_pflag == 1)) {
 	//	printk("[ksys_write] file && file_p");
-		init_waitqueue_head(&(my_wait));
-		return_cnt = 0;
-
-		call_cnt = 0;
-
+	
 		loff_t pos, *ppos = file_ppos(f.file);
 		if(ppos) {
 			pos = *ppos;
@@ -944,16 +789,11 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 		}
 		
 		// spliting 'count' argument
-		size_t count_p = (count/(ssd1 + ssd2)) * ssd1;	// for the parent
-	
-		if(ssd1 != ssd2)
-			while(count_p % 4096 != 0)
-				++count_p;
-
+		size_t count_p = count/2;	// for the parent
 		size_t count_new = count - count_p;	// for the original
 
 	//	trace_printk("[ksys_write] hello");
-	//	printk("[ksys_write] count = %d, count_p = %ld, count_new = %ld, sum = %d", count, count_p, count_new, count_p + count_new);
+	//	printk("[ksys_write] count_p = %ld, count_new = %ld", count_p, count_new);
 	//	printk("[ksys_write 2] buf = %08x", buf);
 		
 	//	struct mount* tmp = real_mount(f.file->f_path.mnt);
@@ -963,41 +803,18 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	//	tmp = real_mount(f_p.file->f_path.mnt);
 	//	tmp_i = file_inode(f_p.file);
 	//	printk("[ksys_write] %s | has_pflag = %d, used_pflag = %d, inode = 0x%08x, security = 0x%08x", tmp->mnt_devname, f_p.file->has_pflag, f_p.file->used_pflag, tmp_i, f_p.file->f_security);
-		
-		f_p.file->f_number = -1;
-		f.file->f_number = -1;
-
+	
 	//	Profile(0, 1, ret_p, vfs_write, f_p.file, buf, count_p, ppos_p);
 		ret_p = vfs_write(f_p.file, buf, count_p, ppos_p);
 
 	//	Profile(1, 1, ret, vfs_write, f.file, buf+count_p, count_new, ppos);	
 		ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
 
-	//	printk("[ksys_write] ret = %ld, ret_p = %ld\n", ret, ret_p);
-		//printk("[ksys_write] ret_p = %ld", ret_p);
-	
-		if(!f.file->f_trunc && !f_p.file->f_trunc) {
-			if(return_cnt != 2)
-				wait_result = wait_event_interruptible_hrtimeout(my_wait, (get_return_cnt()==2), -1);	
-	//		printk(KERN_DEBUG "[%s] wait_result = %d\n", __func__, wait_result);
-		
-			ret_p = f_p.file->f_res;
-			ret = f.file->f_res;
-
-	//		printk("[%s] ret_p = %d, ret = %d, sum = %d\n", __func__, ret_p, ret, ret_p + ret);
-
-			
-			*ppos_p = f_p.file->f_kiocb->ki_pos;
-			*ppos = f.file->f_kiocb->ki_pos;
-	//		printk("[%s] pos_p = %lld, pos = %lld\n", __func__, *ppos_p, *ppos);
-		}
-
 		if(ret_p >= 0 && ppos_p)
 			f_p.file->f_pos = pos_p;
 
 		//printk("[ksys_write] ret = %ld", ret);
 		//printk("[ksys_write] ret_p = %ld", ret_p);
-	
 	
 		if(ret >= 0 && ppos){
 			f.file->f_pos = pos;
@@ -1101,8 +918,8 @@ ssize_t ksys_pwrite64(unsigned int fd, const char __user *buf,
 		ret = -ESPIPE;
 
 		// Byoung
-	//	if((f.file->has_pflag == 1))
-	//		printk("[ksys_pwrite64] new func");
+		if((f.file->has_pflag == 1))
+			printk("[ksys_pwrite64] new func");
 		////////
 
 		if (f.file->f_mode & FMODE_PWRITE)  

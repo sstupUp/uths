@@ -937,6 +937,13 @@ struct file {
 	int has_pflag;						// does this file has a parent file?
 	int used_pflag; 					// has this file used a parent file?
 	int f_number;		// device number
+	
+	long f_res;		// sync의 result 값
+	struct kiocb *f_kiocb;	// async로 내려보낼때 살아 있어야하므로 malloc 후 point
+	struct iovec *f_iovec;
+	struct iov_iter *f_iter;
+
+	int f_trunc;
 	//////////
 
 	spinlock_t		f_lock;
@@ -1872,6 +1879,10 @@ struct inode_operations {
 static inline ssize_t call_read_iter(struct file *file, struct kiocb *kio,
 				     struct iov_iter *iter)
 {
+	// Byoung
+	//if(file->has_pflag || file->used_pflag)
+	//	printk("[%s] filp = %p, kiocb = %p, iov_iter = %p\n", __func__,file, kio, iter); 
+
 	return file->f_op->read_iter(kio, iter);
 }
 
@@ -2045,14 +2056,61 @@ static inline u16 ki_hint_validate(enum rw_hint hint)
 	return 0;
 }
 
+// Byoung
+
+static void my_complete(struct kiocb *, long, long);
+
+extern int ssd1, ssd2;
+
+static inline void file_end_write(struct file*);
+extern unsigned int return_cnt;
+extern wait_queue_head_t my_wait;
+static void my_complete(struct kiocb *kiocb, long res, long res2)
+{
+	// - kiocb가 point 하고 있는 file pointer의 result field에 res 값 할당
+	// - global variable로 있는 return_cnt 값을 1증가
+	struct file* tmp = kiocb->ki_filp;
+
+	//printk("[my_complete] hello from has_p = %d, used_p = %d, res = %ld, return_cnt = %d\n", tmp->has_pflag, tmp->used_pflag, res, return_cnt);
+	tmp->f_res = res;
+	
+	__sync_fetch_and_add(&return_cnt, 1);
+
+//	printk(KERN_DEBUG "[my_complete] hello from has_p = %d, used_p = %d, res = %ld, return_cnt = %d\n", tmp->has_pflag, tmp->used_pflag, res, return_cnt);
+	
+
+	if(kiocb->ki_flags & IOCB_WRITE) {
+		struct inode *inode = file_inode(kiocb->ki_filp);
+		
+		if(S_ISREG(inode->i_mode))
+			__sb_writers_acquired(inode->i_sb, SB_FREEZE_WRITE);
+		file_end_write(kiocb->ki_filp);
+	}
+
+	smp_mb();
+	if(waitqueue_active(&my_wait))
+		wake_up(&my_wait);
+
+}
+
 static inline void init_sync_kiocb(struct kiocb *kiocb, struct file *filp)
 {
+	// Byoung
+	// add callback function pointer to .ki_complete field
+	
 	*kiocb = (struct kiocb) {
 		.ki_filp = filp,
 		.ki_flags = iocb_flags(filp),
 		.ki_hint = ki_hint_validate(file_write_hint(filp)),
 		.ki_ioprio = get_current_ioprio(),
 	};
+
+	// Byoung
+	if(filp->f_number == -1)
+	{
+//		printk("[%s] has_pflag = %d, used_pflag = %d, kiocb = %p, ki_filp = %p, f_inode = %p\n", __func__, filp->has_pflag, filp->used_pflag, kiocb, kiocb->ki_filp, kiocb->ki_filp->f_inode);
+		kiocb->ki_complete = my_complete;
+	}
 }
 
 /*
@@ -2841,6 +2899,7 @@ static inline void file_start_write(struct file *file)
 	if (!S_ISREG(file_inode(file)->i_mode))
 		return;
 	__sb_start_write(file_inode(file)->i_sb, SB_FREEZE_WRITE, true);
+
 }
 
 static inline bool file_start_write_trylock(struct file *file)

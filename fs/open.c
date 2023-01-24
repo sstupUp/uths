@@ -213,7 +213,8 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 
 		// parent
 		printk("[ftruncate] checking parent");
-
+		
+		int err_p;
 //		* explicitly opened as large or we are on 64-bit box *
 		if (f_p.file->f_flags & O_LARGEFILE)
 			small = 0;
@@ -242,8 +243,10 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 		if (!error)
 			error = security_path_truncate(&f_p.file->f_path);
 		if (!error)
-			error = do_truncate(dentry, len_p, ATTR_MTIME|ATTR_CTIME, f_p.file);
+			err_p = do_truncate(dentry, len_p, ATTR_MTIME|ATTR_CTIME, f_p.file);
 		sb_end_write(inode->i_sb); 
+
+		printk("[ftruncate] error = %d, err_p = %d\n", error, err_p);
 	}
 	else
 	{
@@ -436,8 +439,13 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 		// Byoung
 		if(f.file->has_pflag == 1)
 		{	
-			offset_p = offset / 2;
-			len_p = len / 2;
+			offset_p = (offset / (ssd1 + ssd2)) * ssd1;
+			while(offset_p % 4096 != 0)
+				offset_p++;
+
+			len_p = (len / (ssd1 + ssd2)) * ssd1;
+			while(len_p % 4096 != 0)
+				len_p++;
 
 			newoffset = offset - offset_p;
 			newlen = len - len_p;
@@ -1228,6 +1236,39 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 }
 EXPORT_SYMBOL(file_open_root);
 
+// Byoung
+// async로 동작할 때 필요한 구조체들을 할당 후 내려줌
+void alloc_split_file(struct file *f)
+{
+	f->f_kiocb = (struct kiocb*)kzalloc(sizeof(struct kiocb), GFP_KERNEL);
+	f->f_iovec = (struct iovec*)kzalloc(sizeof(struct iovec), GFP_KERNEL);
+	f->f_iter = (struct iov_iter*)kzalloc(sizeof(struct iov_iter), GFP_KERNEL);
+}
+
+// Byoung
+/*
+void print_file_info(struct file* f)
+{
+	struct inode * i = file_inode(f);
+	// struct inode
+	printk("[INFO] ---------------------inode fields-------------------\n");	
+	printk("[INFO] i_mode   = %d\n", i->i_mode);	
+	printk("[INFO] i_opflag = %d\n", i->i_opflags);	
+	printk("[INFO] i_uid   = %d\n", i->i_uid);	
+	printk("[INFO] i_gid   = %d\n", i->i_gid);	
+	printk("[INFO] i_size = %d\n", i->i_mode);	
+	printk("[INFO] i_atime = %d\n", i->i_atime);	
+	printk("[INFO] i_mtime = %d\n", i->i_mtime);	
+	printk("[INFO] i_ctime = %d\n", i->i_ctime);
+
+	printk("[INFO] i_bytes = %d\n", i->i_bytes);	
+	printk("[INFO] i_blkbits = %d\n", i->i_blkbits);	
+	printk("[INFO] i_write_hint = %d\n", i->i_write_hint);	
+	printk("[INFO] i_blocks = %d\n", i->i_blocks);	
+	printk("[INFO] i_mode = %d\n", i->i_mode);	
+	
+}	
+*/
 long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 {
 	struct open_flags op;
@@ -1300,6 +1341,15 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 					tmp = file_inode(p_f);
 					mnt = real_mount(p_f->f_path.mnt);
 					printk("[do_sys_open] %s | parent inode = 0x%08x, f_count = %d, has = %d, used = %d, flag = %o, f_mode = %o\n", mnt->mnt_devname, tmp, p_f->f_count, p_f->has_pflag, p_f->used_pflag, flags_p, p_f->f_mode);
+				
+					if(flags & 00001000) // for trunc
+						f->f_trunc = 1;
+					if(flags_p & 00001000)
+						p_f->f_trunc = 1;
+
+					alloc_split_file(f);
+					alloc_split_file(p_f);
+					
 					fsnotify_open(f);
 					fd_install(fd, f);
 

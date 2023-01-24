@@ -1740,8 +1740,8 @@ int ksys_umount(char __user *name, int flags)
 	retval = do_umount(mnt, flags);
 
 	// Byoung
-	if(nr_uths)
-		--nr_uths;
+	if(atomic_read(&nr_uths))
+		atomic_dec(&nr_uths);
 
 dput_and_out:
 	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
@@ -2768,8 +2768,8 @@ static int do_add_mount(struct mount *newmnt, struct path *path, int mnt_flags)
 	//	printk("[do_add_mount] MNT_UTHS flag & setting number field");
 		newmnt->number = parent->number + 1;
 		// Global var.
-		nr_uths = newmnt->number;
-		printk("[do_add_mount] nr_uths = %d, newmnt->number = %d\n", nr_uths, newmnt->number);
+		atomic_set(&nr_uths, newmnt->number);
+		printk("[do_add_mount] nr_uths = %d, newmnt->number = %d\n", atomic_read(&nr_uths), newmnt->number);
 	}
 	////////
 

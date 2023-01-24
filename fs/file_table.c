@@ -55,7 +55,7 @@ static inline void file_free(struct file *f)
 	
 	// Byoung
 	if((f->has_pflag == 1) || f->used_pflag)
-		printk("[file_free] f_security = NULL part | has = %d, used = %d, f_count = %d", f->has_pflag, f->used_pflag, atomic_long_read(&(f->f_count)));
+		printk("[file_free] f_security = NULL part | has = %d, used = %d, f_count = %d\n", f->has_pflag, f->used_pflag, atomic_long_read(&(f->f_count)));
 
 	security_file_free(f);
 	if (!(f->f_mode & FMODE_NOACCOUNT))

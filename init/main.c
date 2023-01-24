@@ -176,7 +176,7 @@ static const char *panic_later, *panic_param;
 
 // Byoung
 // for profile module
-int module_flag;
+atomic_t module_flag = ATOMIC_INIT(0);
 EXPORT_SYMBOL(module_flag);
 
 int func_len;
@@ -188,20 +188,28 @@ EXPORT_SYMBOL(local_time);
 unsigned int uths_flag;
 EXPORT_SYMBOL(uths_flag);
 
+unsigned int function_ID;
+EXPORT_SYMBOL(function_ID);
+
+unsigned long long temp_time, temp_count;
+EXPORT_SYMBOL(temp_time);
+EXPORT_SYMBOL(temp_count);
+
 #define NAME_LEN 20
-#define ARR_SIZE 10
+#define ARR_SIZE 20
 typedef struct time_stamp {
-	unsigned int id;
-	char name[NAME_LEN];
+	int id;
+	char caller[NAME_LEN];
+	char callee[NAME_LEN];
 	unsigned long long tot_time;
 	unsigned long long tot_count;
 } TIME_STAMP;
 
-TIME_STAMP profile_arr[ARR_SIZE][2];
+TIME_STAMP profile_arr[ARR_SIZE];
 EXPORT_SYMBOL(profile_arr);
 
 #define BILLION 1000000000
-inline void calclock(struct timespec * timevalue, unsigned long long *total_time, unsigned long long *total_count)
+inline void calclock(struct timespec *timevalue, unsigned long long *total_time, unsigned long long *total_count)
 {
 	unsigned long long timedelay = 0, temp = 0, temp_n = 0;
 	struct timespec *myclock = timevalue;
@@ -219,13 +227,14 @@ inline void calclock(struct timespec * timevalue, unsigned long long *total_time
 		timedelay = BILLION * temp + temp_n;
 	}
 
+//	atomic64_add(timedelay, total_time);
+//	atomic64_add(1, total_count);
 	__sync_fetch_and_add(total_time, timedelay);
 	__sync_fetch_and_add(total_count, 1);
 }
 EXPORT_SYMBOL(calclock);
 
-unsigned int nr_uths = 0;		/* number of device mounted under UTHS */
-EXPORT_SYMBOL(nr_uths);
+atomic_t nr_uths = ATOMIC_INIT(0);		/* number of device mounted under UTHS */
 
 ////////////////////////////////////
 

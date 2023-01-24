@@ -330,7 +330,7 @@ static ssize_t dio_complete(struct dio *dio, ssize_t ret, unsigned int flags)
 			ret = generic_write_sync(dio->iocb, ret);
 		
 		// Byoung
-	//	printk("[dio_complete] DIO_COMPLETE_ASYNC\n");
+//		printk("[dio_complete] function loc: %p, iocb loc: %p\n", dio->iocb->ki_complete, dio->iocb);
 
 		dio->iocb->ki_complete(dio->iocb, ret, 0);
 	}
@@ -1200,6 +1200,13 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	struct blk_plug plug;
 	unsigned long align = offset | iov_iter_alignment(iter);
 
+	// Byoung
+//	struct file* f = iocb->ki_filp;
+
+	// Byoung
+//	if(f->f_number == -1)
+//		printk("[%s] align = %lu\n", __func__, align);
+
 	/*
 	 * Avoid references to bdev if not absolutely needed to give
 	 * the early prefetch in the caller enough time.
@@ -1215,6 +1222,10 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 		if (align & blocksize_mask)
 			goto out;
 	}
+
+	// Byoung
+//	if(f->f_number == -1)
+//		printk("[%s] after align & blockdev_mask\n", __func__);
 
 	/* watch out for a 0 len io from a tricksy fs */
 	if (iov_iter_rw(iter) == READ && !count)
@@ -1348,6 +1359,11 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	blk_start_plug(&plug);
 
 	retval = do_direct_IO(dio, &sdio, &map_bh);
+
+	// Byoung
+//	if(f->f_number == -1)
+//		printk("[%s] after do_direct_IO = %d\n", __func__, retval);
+
 	if (retval)
 		dio_cleanup(dio, &sdio);
 
@@ -1415,6 +1431,10 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	//	printk("[do_blockdev_direct_IO] calling dio_complete\n");
 
 		retval = dio_complete(dio, retval, DIO_COMPLETE_INVALIDATE);
+	// Byoung
+	//if(f->f_number == -1)
+	//	printk("[%s] after dio_complete() = %d\n", __func__, retval);
+
 	} else
 		BUG_ON(retval != -EIOCBQUEUED);
 

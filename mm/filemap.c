@@ -2308,13 +2308,26 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 		size = i_size_read(inode);
 		if (iocb->ki_flags & IOCB_NOWAIT) {
-			if (filemap_range_has_page(mapping, iocb->ki_pos,
+			int temp;
+			// Byoung
+//			if(file->f_number == -1)
+//				printk("[%s] no wait\n", __func__);
+		
+			if (temp = filemap_range_has_page(mapping, iocb->ki_pos,
 						   iocb->ki_pos + count - 1))
 				return -EAGAIN;
+			
+//			if(file->f_number == -1)
+//				printk("[%s] after filemap_range_has_page = %d\n", __func__, temp);
+
 		} else {
 			retval = filemap_write_and_wait_range(mapping,
 						iocb->ki_pos,
 					        iocb->ki_pos + count - 1);
+			// Byoung
+//			if(file->f_number == -1)
+//				printk("[%s] filemap_write_and_wait_range() = %d\n", __func__, retval);
+		
 			if (retval < 0)
 				goto out;
 		}
@@ -2323,6 +2336,11 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 		file_accessed(file);
 
 		retval = mapping->a_ops->direct_IO(iocb, iter);
+		
+		// Byoung
+//		if(file->f_number == -1)
+//			printk("[%s] a_ops->direct_IO() = %d\n", __func__, retval);
+		
 		if (retval >= 0) {
 			iocb->ki_pos += retval;
 			count -= retval;
