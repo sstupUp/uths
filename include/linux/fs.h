@@ -919,6 +919,9 @@ static inline int ra_has_index(struct file_ra_state *ra, pgoff_t index)
 		index <  ra->start + ra->size);
 }
 
+// Byoung
+struct file *get_uths_filp(unsigned int, long, unsigned int);
+
 struct file {
 	union {
 		struct llist_node	fu_llist;
@@ -937,7 +940,7 @@ struct file {
 	int has_pflag;						// does this file has a parent file?
 	int used_pflag; 					// has this file used a parent file?
 	int f_number;		// device number
-	
+
 	long f_res;		// sync의 result 값
 	struct kiocb *f_kiocb;	// async로 내려보낼때 살아 있어야하므로 malloc 후 point
 	struct iovec *f_iovec;

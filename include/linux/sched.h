@@ -922,6 +922,9 @@ struct task_struct {
 	/* Open file information: */
 	struct files_struct		*files;
 
+	// Byoung
+	unsigned turn;
+
 	/* Namespaces: */
 	struct nsproxy			*nsproxy;
 

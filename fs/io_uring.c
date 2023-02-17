@@ -71,6 +71,11 @@
 #include <linux/sizes.h>
 #include <linux/hugetlb.h>
 
+// Byoung
+#include <linux/mount.h>
+#include <linux/kernel.h>
+#include "mount.h"
+
 #include <uapi/linux/io_uring.h>
 
 #include "internal.h"
@@ -986,8 +991,19 @@ static void io_file_put(struct io_submit_state *state)
  */
 static struct file *io_file_get(struct io_submit_state *state, int fd)
 {
-	if (!state)
-		return fget(fd);
+	// Byoung
+	struct file* dummy;
+
+	if (!state) {
+		// Byoung
+		
+		dummy = fget(fd);
+		if(dummy->has_pflag == 1)
+			dummy = get_uths_filp(fd, (long)atomic_long_read(&dummy->f_count), 1);
+		struct mount* mnt = real_mount(dummy->f_path.mnt);
+		//printk("[io_file_get] dev = %s\n", mnt->mnt_devname);
+		return dummy;
+	}
 
 	if (state->file) {
 		if (state->fd == fd) {
@@ -1824,6 +1840,10 @@ static int __io_submit_sqe(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		return -EINVAL;
 
 	opcode = READ_ONCE(s->sqe->opcode);
+
+	// Byoung
+	//printk("[%s] opcode = %u\n", __func__, opcode);
+
 	switch (opcode) {
 	case IORING_OP_NOP:
 		ret = io_nop(req, req->user_data);
@@ -2504,6 +2524,9 @@ static int io_ring_submit(struct io_ring_ctx *ctx, unsigned int to_submit)
 
 		if (!io_get_sqring(ctx, &s))
 			break;
+		
+		// Byoung
+		//printk("[%s] sqe flags = %u\n", __func__, s.sqe->flags);
 
 		/*
 		 * If previous wasn't linked and we have a linked command,
@@ -3249,6 +3272,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	if (!f.file)
 		return -EBADF;
 
+	
 	ret = -EOPNOTSUPP;
 	if (f.file->f_op != &io_uring_fops)
 		goto out_fput;
@@ -3257,6 +3281,13 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	ctx = f.file->private_data;
 	if (!percpu_ref_tryget(&ctx->refs))
 		goto out_fput;
+	
+	// Byoung
+//	if(f.file->has_pflag == -2)
+//	{
+	//	printk("[io_uring_enter] flags = %d, ctx->flags = %d\n", flags, ctx->flags);
+//	}	
+
 
 	/*
 	 * For SQ polling, the thread will do all submissions and completions.
@@ -3475,7 +3506,7 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 
 	if (copy_from_user(&p, params, sizeof(p)))
 		return -EFAULT;
-	
+
 	// parameter의 resv field가 0으로 초기화 되어있는지 확인
 	// 
 	for (i = 0; i < ARRAY_SIZE(p.resv); i++) {
@@ -3583,6 +3614,9 @@ SYSCALL_DEFINE4(io_uring_register, unsigned int, fd, unsigned int, opcode,
 	f = fdget(fd);
 	if (!f.file)
 		return -EBADF;
+
+	// Byoung
+	//printk("[%s] hello\n", __func__);
 
 	ret = -EOPNOTSUPP;
 	if (f.file->f_op != &io_uring_fops)

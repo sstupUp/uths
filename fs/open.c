@@ -1362,9 +1362,9 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 			{
 				
 				// Byoung
-				if(!strncmp(tmp->name, "/dummy", 6) || !strncmp(tmp->name, "/dummy2", 6))
+				if(!strncmp(tmp->name, "/raid", 5) || !strncmp(tmp->name, "/dummy2", 6))
 				{
-					f->has_pflag = -2;
+				//	f->has_pflag = -2;
 					printk("[do_sys_open test] name = %s, f_count = %d, flags = %08o, pid = %d\n", tmp->name, f->f_count, flags, current->pid);
 				}
 				//////

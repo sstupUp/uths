@@ -3133,7 +3133,6 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		return retval;
 	
 	// Byoung
-
 	if(flags & MS_UTHS)
 		printk("[do_mount] UTHS | %d", MS_UTHS);
 	//////
@@ -3413,7 +3412,8 @@ int ksys_mount(const char __user *dev_name, const char __user *dir_name,
 	ret = PTR_ERR(options);
 	if (IS_ERR(options))
 		goto out_data;
-	
+
+	// Byoung	
 	if(flags & MS_UTHS)
 		printk("[ksys_mount] hello");
 

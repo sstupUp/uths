@@ -915,6 +915,41 @@ struct file *fget_raw(unsigned int fd)
 }
 EXPORT_SYMBOL(fget_raw);
 
+
+
+/*
+ * - current에 현재 IO scheduling 정보 담겨 있음
+ */
+struct file *get_uths_filp(unsigned int fd, long cnt, unsigned int type)
+{
+	struct file* dummy;
+	// async
+	if(type == 1)
+	{
+		unsigned int turn = current->turn;
+		rcu_read_lock();
+
+		// turn == 1 -> sdb
+		if(turn)
+		{
+		//	printk("[%s] turn = 1\n", __func__);
+			dummy = fcheck_files_p(current->files, fd);
+			atomic_long_set(&dummy->f_count, cnt);
+		} 
+		else
+		{
+		//	printk("[%s] turn = %d\n", __func__, turn);
+			dummy = fcheck_files(current->files, fd);
+		}
+
+		rcu_read_unlock();
+		current->turn = (turn+1)%2;
+	}
+
+	return dummy;
+}
+
+
 /*
  * Lightweight file lookup - no refcnt increment if fd table isn't shared.
  *

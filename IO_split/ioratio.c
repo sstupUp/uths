@@ -13,8 +13,8 @@ static int __init start_split(void)
 {
 	printk("[IO RATIO] Load IO split module!\n");
 
-	ssd1 = 2;
-	ssd2 = 4;
+	ssd1 = 1;
+	ssd2 = 1;
 
 	printk("[IO RATIO] Setting ssd1 = %d, ssd2 = %d\n", ssd1, ssd2);
 

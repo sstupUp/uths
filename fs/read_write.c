@@ -973,7 +973,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	//	Profile(1, 1, ret, vfs_write, f.file, buf+count_p, count_new, ppos);	
 		ret = vfs_write(f.file, buf+count_p, count_new, ppos);	
 
-	//	printk("[ksys_write] ret = %ld, ret_p = %ld\n", ret, ret_p);
+		printk("[ksys_write] ret = %ld, ret_p = %ld\n", ret, ret_p);
 		//printk("[ksys_write] ret_p = %ld", ret_p);
 	
 		if(!f.file->f_trunc && !f_p.file->f_trunc) {
@@ -1025,8 +1025,8 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 	       		ret = vfs_write(f.file, buf, count, ppos);
 	
 		// Byoung
-		//if(f.file->has_pflag == -2)
-			//printk("[ksys_write test] count = %d", atomic_long_read(&f.file->f_count));
+		if(f.file->has_pflag == -2)
+			printk("[ksys_write test] count = %d", atomic_long_read(&f.file->f_count));
 		//	trace_printk("[ksys_write] done original vfs_write");
 		if (ret >= 0 && ppos)
 			f.file->f_pos = pos;
