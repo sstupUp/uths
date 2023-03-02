@@ -520,14 +520,22 @@ struct nameidata {
 static void set_nameidata(struct nameidata *p, int dfd, struct filename *name)
 {
 	struct nameidata *old = current->nameidata;
+	
+	// Byoung
+	old->nd_number=0;
+	//
+	//
 	p->stack = p->internal;
 	p->dfd = dfd;
 	p->name = name;
 	p->total_link_count = old ? old->total_link_count : 0;
 	p->saved = old;
-	current->nameidata = p;
+	
 	// Byoung
 	p->nd_number = 0;
+	//
+	
+	current->nameidata = p;
 }
 
 static void restore_nameidata(void)
@@ -1321,6 +1329,8 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 			       struct inode **inode, unsigned *seqp)
 {
 
+	int flag = nd->nd_number? 1: 0;
+
 	int count = 0;
 	for (;;) {
 		struct mount *mounted;
@@ -1331,10 +1341,19 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		switch (managed_dentry_rcu(path)) {
 		case -ECHILD:
 		default:
+			// Byoung
+			if(flag)
+				printk("[__follow_mount_rcu] ECHILD or default\n");
 			return false;
 		case -EISDIR:
+			// Byoung
+			if(flag)
+				printk("[__follow_mount_rcu] EISDIR\n");
 			return true;
 		case 0:
+			// Byoung
+			if(flag)
+				printk("[__follow_mount_rcu] case 0\n");
 			break;
 		}
 
@@ -1348,7 +1367,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		// Byoung
 		if(nd->nd_number)
 		{
-//			printk("[__follow_mount_rcu] before __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
+			printk("[__follow_mount_rcu] before __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
 			path->mnt->mnt_number = nd->nd_number;
 			
 			if(count == 1)
@@ -1365,7 +1384,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 			if(nd->nd_number)
 			{
 
-//				printk("[__follow_mount_rcu] after __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
+				printk("[__follow_mount_rcu] after __lookup_mnt | mnt = %d <= nd = %d", path->mnt->mnt_number, nd->nd_number);
 			
 				path->mnt->mnt_number = 2; //nd->nd_number;
 			}
@@ -1485,7 +1504,8 @@ int follow_down(struct path *path)
 			mntput(path->mnt);
 			path->mnt = mounted;
 			path->dentry = dget(mounted->mnt_root);
-			printk("[follow_down] dentry: %s", path->dentry->d_name.name);
+			// Byoung
+		//	printk("[follow_down] dentry: %s", path->dentry->d_name.name);
 			continue;
 		}
 
@@ -4155,8 +4175,23 @@ long do_unlinkat(int dfd, struct filename *name)
 	if(!strncmp(name->name, "/dummy", 6))
 		printk("[do_unlinkat test] hello");
 
+
+	// Byoung
+	int count = atomic_read(&nr_uths);
+
+	// Byoung (while loop)
+	while(count > -1) {
+
 retry:
-	name->fn_number = 0;
+
+	// Byoung
+	if(flag) {
+		name->fn_number = count;
+		count--;
+	}
+	else
+		name->fn_number = count;
+
 	name = filename_parentat(dfd, name, lookup_flags, &path, &last, &type);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
@@ -4204,99 +4239,6 @@ exit1:
 		inode = NULL;
 		goto retry;
 	}
-//	putname(name);
-
-//	return error;
-/*
-	// Byoung
-	if(flag == 1)
-	{
-		name = name_ori;
-
-		int error;
-		struct dentry *dentry_p;
-		struct path path_p;
-		struct qstr last_p;
-		int type_p;
-		struct inode *inode_p = NULL;
-		struct inode *delegated_inode_p = NULL;
-		unsigned int lookup_flags_p = 0;
-
-	retry_p:
-		name->fn_number = 1;
-		name = filename_parentat(dfd, name, lookup_flags_p, &path_p, &last_p, &type_p);
-		if (IS_ERR(name))
-			return PTR_ERR(name);
-
-		printk("[do_unlinkat] name = %s", name->name);
-
-		error = -EISDIR;
-		if (type_p != LAST_NORM)
-			goto exit1_p;
-
-		error = mnt_want_write(path_p.mnt);
-		if (error)
-			goto exit1_p;
-		
-		printk("[dp_unlinkat] before retry_deleg");
-
-	retry_deleg_p:
-		inode_lock_nested(path_p.dentry->d_inode, I_MUTEX_PARENT);
-		dentry = __lookup_hash(&last_p, path_p.dentry, lookup_flags_p);
-		error = PTR_ERR(dentry_p);
-		if (!IS_ERR(dentry_p)) {
-		//	* Why not before? Because we want correct error value *
-			if (last_p.name[last_p.len])
-				goto slashes_p;
-			inode_p = dentry_p->d_inode;
-			if (d_is_negative(dentry_p))
-				goto slashes_p;
-			ihold(inode_p);
-			error = security_path_unlink(&path_p, dentry_p);
-			if (error)
-				goto exit2_p;
-			error = vfs_unlink(path_p.dentry->d_inode, dentry_p, &delegated_inode_p);
-		
-		printk("[dp_unlinkat] before exit2 | unlink ret = %d", error);
-	exit2_p:
-			dput(dentry_p);
-		}
-		inode_unlock(path_p.dentry->d_inode);
-		if (inode_p)
-			iput(inode_p);//	* truncate the inode here *
-		inode_p = NULL;
-		if (delegated_inode_p) {
-			error = break_deleg_wait(&delegated_inode_p);
-			if (!error)
-				goto retry_deleg_p;
-		}
-		mnt_drop_write(path_p.mnt);
-
-		printk("[dp_unlinkat] before exit1");
-	exit1_p:
-		path_put(&path_p);
-		if (retry_estale(error, lookup_flags_p)) {
-			lookup_flags_p |= LOOKUP_REVAL;
-			inode_p = NULL;
-			goto retry_p;
-		}
-//		putname(name);
-		goto uths;
-
-	slashes_p:
-		if (d_is_negative(dentry_p))
-			error = -ENOENT;
-		else if (d_is_dir(dentry_p))
-			error = -EISDIR;
-		else
-			error = -ENOTDIR;
-		goto exit2;
-	
-
-		printk("[do_unlinkat] %s", name->name);
-	}
-*/
-uths:
 	putname(name);
 	return error;
 
@@ -4308,6 +4250,7 @@ slashes:
 	else
 		error = -ENOTDIR;
 	goto exit2;
+	}
 }
 
 SYSCALL_DEFINE3(unlinkat, int, dfd, const char __user *, pathname, int, flag)

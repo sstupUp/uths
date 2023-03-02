@@ -427,11 +427,11 @@ int ksys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 	
 	if (f.file) {
 
-		if(fd > 3)
-		{	
-			struct mount *tmp = real_mount(f.file->f_path.mnt);
-			printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s, count = %d", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname, atomic_long_read(&f.file->f_count));
-		}
+	//	if(fd > 3)
+	//	{	
+	//		struct mount *tmp = real_mount(f.file->f_path.mnt);
+	//		printk("[ksys_fallocate 1] has_pflag = %d, used_pflag = %d, %s, count = %d", f.file->has_pflag, f.file->used_pflag, tmp->mnt_devname, atomic_long_read(&f.file->f_count));
+	//	}
 		
 		if(f.file->has_pflag == -2)
 			printk("[ksys_fallocate test] count = %d", atomic_long_read(&f.file->f_count));

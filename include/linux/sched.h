@@ -923,7 +923,7 @@ struct task_struct {
 	struct files_struct		*files;
 
 	// Byoung
-	unsigned turn;
+	unsigned turn;			/* used in io_uring */
 
 	/* Namespaces: */
 	struct nsproxy			*nsproxy;
